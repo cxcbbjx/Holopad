@@ -1,6 +1,22 @@
-node_modules
-dist
+# dependencies
+node_modules/
+.cache
+
+# builds
+dist/
+
+# env
 .env
 .env.local
-.cache
+
+# system files
 .DS_Store
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# temp / junk
+ChatGPT Image*
+From KlickPin CF*
