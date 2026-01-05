@@ -1,7 +1,17 @@
 import FadeIn from "../ui/FadeIn";
 import GlowButton from "../ui/GlowButton";
+import { useNavigate } from "react-router-dom";
 
-export default function Upload({ onSelect }) {
+export default function Upload() {
+  const navigate = useNavigate();
+
+  const handleSelect = (file) => {
+    // Create a temporary URL for the file to pass to Viewer
+    // or just pass the file object if we can handle it.
+    // Ideally we'd use context or state management, but navigation state works for simple flows.
+    navigate('/viewer', { state: { image: file } });
+  };
+
   return (
     <div
       style={{
@@ -32,7 +42,7 @@ export default function Upload({ onSelect }) {
             type="file"
             accept="image/*"
             hidden
-            onChange={(e) => e.target.files[0] && onSelect(e.target.files[0])}
+            onChange={(e) => e.target.files[0] && handleSelect(e.target.files[0])}
           />
           <GlowButton>
             Choose image

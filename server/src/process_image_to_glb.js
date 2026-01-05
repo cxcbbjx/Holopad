@@ -11,7 +11,6 @@ async function createTexturedGLB(imagePath, outPath) {
   if (!fs.existsSync(templatePath)) {
     throw new Error('Template GLB not found at ' + templatePath);
   }
-
   // read the template GLB (await)
   const doc = await io.read(templatePath);
 

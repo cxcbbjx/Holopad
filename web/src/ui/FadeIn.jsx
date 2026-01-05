@@ -6,7 +6,7 @@ export default function FadeIn({ delay = 0, children }) {
   useEffect(() => {
     const t = setTimeout(() => setShow(true), delay);
     return () => clearTimeout(t);
-  }, [delay]);
+}, [delay]);
 
   return (
     <div style={{
