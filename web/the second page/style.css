@@ -443,3 +443,30 @@ button {
   letter-spacing: 0.3em;
   text-transform: uppercase;
 }
+
+.cta-btn {
+  position: relative;
+  overflow: hidden;
+}
+.cta-btn::after {
+  content: "";
+  position: absolute;
+  inset: -40%;
+  background: radial-gradient(circle, rgba(111,163,255,0.25), transparent 60%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.cta-btn:hover::after {
+  opacity: 1;
+}
+
+.scroll-hint {
+  position: fixed;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  letter-spacing: 0.3em;
+  opacity: 0.5;
+  pointer-events: none;
+}

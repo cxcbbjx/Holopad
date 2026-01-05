@@ -28,17 +28,15 @@ export default function SecondPage() {
     gsap.registerPlugin(ScrollTrigger);
     soundManager.startAmbient();
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            entry.target.classList.add("in-view");
-          }
-        });
-      },
-      { root: null, threshold: 0.2 }
-    );
-    document.querySelectorAll(".section").forEach((el) => observer.observe(el));
+    gsap.utils.toArray(".section").forEach((el) => {
+      const trig = ScrollTrigger.create({
+        trigger: el,
+        start: "top 75%",
+        onEnter: () => el.classList.add("in-view"),
+        onLeaveBack: () => el.classList.remove("in-view")
+      });
+      createdTriggersRef.current.push(trig);
+    });
     if (titleRef.current) {
       gsap.fromTo(titleRef.current, { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 1.2, ease: "power3.out", delay: 0.2 });
     }
@@ -75,6 +73,15 @@ export default function SecondPage() {
     const label = document.querySelector(".center-label");
     const qxLabel = label ? gsap.quickTo(label, "x", { duration: 0.4, ease: "power2.out" }) : null;
     const qyLabel = label ? gsap.quickTo(label, "y", { duration: 0.4, ease: "power2.out" }) : null;
+    ScrollTrigger.create({
+      onUpdate: (self) => {
+        gsap.to(".holo-title", {
+          skewX: self.getVelocity() * 0.002,
+          duration: 0.3,
+          ease: "power3.out"
+        });
+      }
+    });
     const onLabelMove = (e) => {
       if (!label || !qxLabel || !qyLabel) return;
       const rect = label.getBoundingClientRect();
@@ -123,13 +130,11 @@ export default function SecondPage() {
       });
     return () => {
       try { window.holostageCleanup && window.holostageCleanup(); } catch {}
-      observer.disconnect();
       clean1 && clean1();
       clean2 && clean2();
       label && label.removeEventListener("mousemove", onLabelMove);
       createdTriggersRef.current.forEach((t) => t && t.kill());
       createdTriggersRef.current = [];
-      controller.abort();
     };
   }, []);
 
@@ -244,7 +249,7 @@ export default function SecondPage() {
       uColorB: { value: new THREE.Color("#1f3b73") }
     });
     useFrame((state) => {
-      uniforms.current.uTime.value = state.clock.getElapsedTime();
+      uniforms.current.uTime.value = state.clock.getElapsedTime() * (0.3 + progress * 0.7);
       const a = new THREE.Color("#0c1022");
       const b = new THREE.Color("#1f3b73");
       uniforms.current.uAmp.value = 0.35 + progress * 0.65;
@@ -340,7 +345,8 @@ export default function SecondPage() {
             </div>
             <p className="holo-note">UNDER-MAINTAINANCE</p>
           </div>
-          
+          <div className="scroll-hint">SCROLL</div>
+
         </div>
       </section>
     </div>
