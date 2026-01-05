@@ -470,3 +470,13 @@ button {
   opacity: 0.5;
   pointer-events: none;
 }
+
+.holo-title {
+  text-shadow:
+    0 0 30px rgba(111,163,255,0.15),
+    0 0 60px rgba(111,163,255,0.08);
+}
+
+.holo-sub {
+  opacity: 0.75;
+}
