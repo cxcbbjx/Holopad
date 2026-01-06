@@ -9,6 +9,7 @@ import { Link } from "react-router-dom";
 import { useSound, soundManager } from "../utils/SoundManager";
 import "../styles/theme.css";
 import LiquidChrome from "../components/LiquidChrome";
+import GradientBlinds from "../components/GradientBlinds";
 
 const vertexShader = `
 varying vec2 vUv;
@@ -187,11 +188,27 @@ export default function SecondPage() {
           </div>
         </section>
 
-        <section className="sp-section" style={{ padding: "120px 24px", maxWidth: "1200px", margin: "0 auto" }}>
+        <section className="sp-section" style={{ position: "relative", padding: "120px 24px", maxWidth: "1200px", margin: "0 auto" }}>
           <h1 className="glow-text" style={{ fontSize: "3rem", marginBottom: "20px", textAlign: "center" }}>CITY TOUR</h1>
           <p className="subtitle" style={{ textAlign: "center", color: "var(--holo-blue)", letterSpacing: "0.2em", textTransform: "uppercase" }}>
             Parametric City Scape Exploration
           </p>
+          <div style={{ width: '100%', height: '600px', position: 'relative' }}>
+          <GradientBlinds
+          gradientColors={['#FF9FFC', '#5227FF']}
+          angle={0}
+         noise={0.3}
+         blindCount={12}
+         blindMinWidth={50}
+         spotlightRadius={0.5}
+         spotlightSoftness={1}
+         spotlightOpacity={1}
+         mouseDampening={0.15}
+         distortAmount={0}
+         shineDirection="left"
+         mixBlendMode="lighten"
+          />
+         </div>
           <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "40px", marginTop: "40px", alignItems: "start" }}>
             <div className="glass-panel tech-border" style={{ padding: "30px" }}>
               <h2 style={{ margin: "10px 0" }}>Urban Simulation</h2>
