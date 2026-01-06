@@ -8,6 +8,7 @@ import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { Link } from "react-router-dom";
 import { useSound, soundManager } from "../utils/SoundManager";
 import "../styles/theme.css";
+import LiquidChrome from "../components/LiquidChrome";
 
 const vertexShader = `
 varying vec2 vUv;
@@ -141,7 +142,8 @@ export default function SecondPage() {
         <Overlay />
       </section>
       <div style={{ position: "relative", zIndex: 1 }}>
-        <section className="sp-section" style={{ padding: "120px 24px", maxWidth: "1200px", margin: "0 auto" }}>
+        <section className="sp-section" style={{ position: "relative", padding: "120px 24px", maxWidth: "1200px", margin: "0 auto" }}>
+          <LiquidChrome baseColor={[0.08, 0.12, 0.22]} amplitude={0.25} speed={0.15} />
           <h1 className="glow-text" style={{ fontSize: "3rem", marginBottom: "20px", textAlign: "center" }}>CORE ARCHITECTURE</h1>
           <p className="subtitle" style={{ textAlign: "center", color: "var(--holo-blue)", letterSpacing: "0.2em", textTransform: "uppercase" }}>
             Data Flow & Rendering Pipeline
