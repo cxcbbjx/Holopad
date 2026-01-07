@@ -4,7 +4,7 @@ const path = require('path');
 const { NodeIO } = require('@gltf-transform/core');
 const { createCanvas, loadImage } = require('canvas');
 
-async function createTexturedGLB(imagePath, outPath) {
+async function createTexturedGLB(imagePath, outPath, textureBufferOverride = null, opts = {}) {
   const io = new NodeIO();
 
   const templatePath = path.join(__dirname, 'templates', 'head_template.glb');
@@ -14,35 +14,55 @@ async function createTexturedGLB(imagePath, outPath) {
   // read the template GLB (await)
   const doc = await io.read(templatePath);
 
-  // load uploaded image into canvas
-  const img = await loadImage(imagePath);
+  // load uploaded image into canvas, then composite optional overlay
   const size = 1024;
   const canvas = createCanvas(size, size);
   const ctx = canvas.getContext('2d');
 
-  // draw cover (center-crop) into square canvas
+  const img = await loadImage(imagePath);
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, size, size);
   const imgAR = img.width / img.height;
   let drawW = size, drawH = size, dx = 0, dy = 0;
-  if (imgAR > 1) { // wide
-    drawH = size;
-    drawW = Math.round(size * imgAR);
-    dx = Math.round((size - drawW) / 2);
+  const fit = opts.fit || 'cover';
+  if (fit === 'contain') {
+    if (imgAR > 1) {
+      drawW = size;
+      drawH = Math.round(size / imgAR);
+      dy = Math.round((size - drawH) / 2);
+    } else {
+      drawH = size;
+      drawW = Math.round(size * imgAR);
+      dx = Math.round((size - drawW) / 2);
+    }
   } else {
-    drawW = size;
-    drawH = Math.round(size / imgAR);
-    dy = Math.round((size - drawH) / 2);
+    if (imgAR > 1) {
+      drawH = size;
+      drawW = Math.round(size * imgAR);
+      dx = Math.round((size - drawW) / 2);
+    } else {
+      drawW = size;
+      drawH = Math.round(size / imgAR);
+      dy = Math.round((size - drawH) / 2);
+    }
   }
   ctx.drawImage(img, dx, dy, drawW, drawH);
 
-  // hologram tint + subtle scanlines
-  ctx.fillStyle = 'rgba(30,160,255,0.18)';
-  ctx.fillRect(0, 0, size, size);
-  ctx.globalAlpha = 0.06;
-  ctx.fillStyle = '#ffffff';
-  for (let y = 0; y < size; y += 6) ctx.fillRect(0, y, size, 1);
-  ctx.globalAlpha = 1.0;
+  if (textureBufferOverride) {
+    const overlayImg = await loadImage(textureBufferOverride);
+    ctx.globalAlpha = 0.9;
+    ctx.drawImage(overlayImg, 0, 0, size, size);
+    ctx.globalAlpha = 1.0;
+  }
+
+  if (opts.applyEffects !== false) {
+    ctx.fillStyle = 'rgba(30,160,255,0.18)';
+    ctx.fillRect(0, 0, size, size);
+    ctx.globalAlpha = 0.06;
+    ctx.fillStyle = '#ffffff';
+    for (let y = 0; y < size; y += 6) ctx.fillRect(0, y, size, 1);
+    ctx.globalAlpha = 1.0;
+  }
 
   const pngBuffer = canvas.toBuffer('image/png');
 
@@ -52,8 +72,15 @@ async function createTexturedGLB(imagePath, outPath) {
   const mats = typeof root.listMaterials === 'function' ? root.listMaterials() : (root.materials || []);
   if (!mats || mats.length === 0) throw new Error('No materials found in template GLB');
 
-  // create glTF-Transform texture from buffer
+  // create glTF-Transform textures
   const texture = doc.createTexture('userTexture').setMimeType('image/png').setImage(pngBuffer);
+  let emissiveTex = null;
+  if (textureBufferOverride && opts.applyEffects !== false) {
+    try {
+      const emissiveBuf = fs.readFileSync(textureBufferOverride);
+      emissiveTex = doc.createTexture('userEmissive').setMimeType('image/png').setImage(emissiveBuf);
+    } catch {}
+  }
 
   // Helper to set base color texture in multiple possible APIs
   function setBaseColorTextureOnMaterial(mat, tex) {
@@ -98,6 +125,22 @@ async function createTexturedGLB(imagePath, outPath) {
     return false;
   }
 
+  function setEmissiveTextureOnMaterial(mat, tex) {
+    try {
+      if (typeof mat.setEmissiveTexture === 'function') { mat.setEmissiveTexture(tex); return true; }
+    } catch {}
+    try {
+      if (typeof mat.getEmissiveTexture === 'function') {
+        const info = mat.getEmissiveTexture();
+        if (info && typeof info.setTexture === 'function') { info.setTexture(tex); return true; }
+      }
+    } catch {}
+    try {
+      if (mat.emissiveTexture !== undefined) { mat.emissiveTexture = tex; return true; }
+    } catch {}
+    return false;
+  }
+
   // Attempt to set the texture on the first material that accepts it
   let replaced = false;
   for (const mat of mats) {
@@ -105,9 +148,14 @@ async function createTexturedGLB(imagePath, outPath) {
       if (setBaseColorTextureOnMaterial(mat, texture)) {
         // tweak material appearance
         try {
-          if (typeof mat.setRoughnessFactor === 'function') mat.setRoughnessFactor(0.25);
-          if (typeof mat.setMetallicFactor === 'function') mat.setMetallicFactor(0.05);
-          if (typeof mat.setEmissiveFactor === 'function') mat.setEmissiveFactor([0.08, 0.3, 0.9]);
+          if (opts.applyEffects !== false) {
+            if (typeof mat.setRoughnessFactor === 'function') mat.setRoughnessFactor(0.25);
+            if (typeof mat.setMetallicFactor === 'function') mat.setMetallicFactor(0.05);
+            if (typeof mat.setEmissiveFactor === 'function') mat.setEmissiveFactor([0.08, 0.3, 0.9]);
+            if (typeof mat.setAlphaMode === 'function') mat.setAlphaMode('BLEND');
+            if (typeof mat.setDoubleSided === 'function') mat.setDoubleSided(true);
+            if (emissiveTex) setEmissiveTextureOnMaterial(mat, emissiveTex);
+          }
         } catch (e) { /* ignore */ }
         replaced = true;
         break;

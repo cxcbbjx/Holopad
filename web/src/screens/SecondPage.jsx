@@ -1,4 +1,4 @@
-import React, { useRef, useMemo, useEffect } from "react";
+import React, { useRef, useMemo, useEffect, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { EffectComposer, Bloom, ChromaticAberration, Noise, Vignette } from "@react-three/postprocessing";
 import { BlendFunction } from "postprocessing";
@@ -10,6 +10,11 @@ import { useSound, soundManager } from "../utils/SoundManager";
 import "../styles/theme.css";
 import LiquidChrome from "../components/LiquidChrome";
 import GradientBlinds from "../components/GradientBlinds";
+import LiquidEther from "../components/Liqued Ether";
+import Hyperspeed from "../components/HyperSpeed";
+import Waves from "../components/Waves";
+
+
 
 const vertexShader = `
 varying vec2 vUv;
@@ -95,17 +100,55 @@ const SceneContent = () => {
 const Overlay = () => {
   const titleRef = useRef();
   const subRef = useRef();
+  const fileInputRef = useRef(null);
+  const [loading, setLoading] = useState(false);
+  const [modelUrl, setModelUrl] = useState(null);
   useEffect(() => {
+    (async () => {
+      if (!window.customElements.get('model-viewer')) {
+        await import('@google/model-viewer');
+      }
+    })();
     soundManager.startAmbient();
     gsap.fromTo(titleRef.current, { opacity: 0, y: 50 }, { opacity: 1, y: 0, duration: 1.5, ease: "power3.out", delay: 0.5 });
     gsap.fromTo(subRef.current, { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 1.5, ease: "power3.out", delay: 0.8 });
   }, []);
+  const onPickFile = () => {
+    soundManager.playClick();
+    fileInputRef.current?.click();
+  };
+  const onFileChange = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setLoading(true);
+    try {
+      const fd = new FormData();
+      fd.append("image", f);
+      const r = await fetch("http://localhost:5000/api/upload", { method: "POST", body: fd });
+      const j = await r.json();
+      if (j?.modelUrl) setModelUrl(j.modelUrl);
+    } catch {}
+    setLoading(false);
+  };
   return (
     <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "none", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", color: "white", zIndex: 10, mixBlendMode: "difference" }}>
       <h1 ref={titleRef} onMouseEnter={() => soundManager.playHover()} onClick={() => soundManager.playClick()} style={{ fontSize: "5rem", fontWeight: "bold", letterSpacing: "-0.05em", margin: 0, fontFamily: "'Helvetica Neue', sans-serif", pointerEvents: "auto", cursor: "pointer" }}>
         HOLOSTAGE
       </h1>
       <p ref={subRef} style={{ fontSize: "1.2rem", letterSpacing: "0.2em", textTransform: "uppercase", opacity: 0.8 }}>Immersive Experience</p>
+      <div style={{ display: "flex", gap: "14px", marginTop: "18px", pointerEvents: "auto" }}>
+        <button onClick={onPickFile} className="glass-panel" style={{ padding: "10px 20px", borderColor: "var(--holo-blue)", color: "var(--holo-blue)", cursor: "pointer" }}>
+          GET START
+        </button>
+        {loading && <span className="mono-label" style={{ color: "var(--holo-blue)" }}>Uploading...</span>}
+        <input ref={fileInputRef} type="file" accept="image/*" onChange={onFileChange} style={{ display: "none" }} />
+      </div>
+      {modelUrl && (
+        <div style={{ position: "absolute", bottom: "30px", width: "80%", maxWidth: "900px", height: "380px", borderRadius: "12px", overflow: "hidden", border: "1px solid rgba(0,240,255,0.2)", pointerEvents: "auto", background: "rgba(0,0,0,0.4)", boxShadow: "0 0 30px rgba(0,240,255,0.25)" }}>
+          <div style={{ position: "absolute", inset: 0, backgroundImage: "repeating-linear-gradient(to bottom, rgba(0,240,255,0.06) 0px, rgba(0,240,255,0.06) 1px, transparent 6px)", pointerEvents: "none", mixBlendMode: "screen" }} />
+          <model-viewer src={modelUrl} camera-controls auto-rotate tone-mapping="neutral" exposure="1.1" shadow-intensity="0.3" style={{ width: "100%", height: "100%", filter: "drop-shadow(0 0 10px rgba(0,240,255,0.6))" }} />
+        </div>
+      )}
     </div>
   );
 };
@@ -193,22 +236,28 @@ export default function SecondPage() {
           <p className="subtitle" style={{ textAlign: "center", color: "var(--holo-blue)", letterSpacing: "0.2em", textTransform: "uppercase" }}>
             Parametric City Scape Exploration
           </p>
-          <div style={{ width: '100%', height: '600px', position: 'relative' }}>
-          <GradientBlinds
-          gradientColors={['#FF9FFC', '#5227FF']}
-          angle={0}
-         noise={0.3}
-         blindCount={12}
-         blindMinWidth={50}
-         spotlightRadius={0.5}
-         spotlightSoftness={1}
-         spotlightOpacity={1}
-         mouseDampening={0.15}
-         distortAmount={0}
-         shineDirection="left"
-         mixBlendMode="lighten"
-          />
-         </div>
+          <div style={{ width: '100%', height: '600px', position: 'relative', marginBottom: '30px' }}>
+            <LiquidEther colors={['#121a2b', '#3b82f6', '#06b6d4']} speed={0.25} intensity={0.28} />
+            <GradientBlinds
+              gradientColors={['#FF9FFC', '#5227FF']}
+              angle={0}
+              noise={0.3}
+              blindCount={12}
+              blindMinWidth={50}
+              spotlightRadius={0.5}
+              spotlightSoftness={1}
+              spotlightOpacity={1}
+              mouseDampening={0.15}
+              distortAmount={0}
+              shineDirection="left"
+              mixBlendMode="lighten"
+            />
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', zIndex: 2, pointerEvents: 'none' }}>
+              <h1 className="glow-text" style={{ fontSize: '3rem', margin: 0, textAlign: 'center' }}>COMING SOON</h1>
+              
+            </div>
+          </div>
+           
           <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "40px", marginTop: "40px", alignItems: "start" }}>
             <div className="glass-panel tech-border" style={{ padding: "30px" }}>
               <h2 style={{ margin: "10px 0" }}>Urban Simulation</h2>
@@ -216,12 +265,10 @@ export default function SecondPage() {
                 Procedural buildings, emissive accents, and temporal camera motion create a cinematic overview of city dynamics.
               </p>
               <div style={{ display: "flex", gap: "12px", marginTop: "20px" }}>
-                <Link to="/city-tour" className="glass-panel" style={{ padding: "12px 30px", cursor: "pointer", borderColor: "var(--holo-blue)", color: "var(--holo-blue)" }}>
-                  START TOUR
+                <Link to="/screens/CityTourPage.jsx" className="glass-panel" style={{ padding: "12px 30px", cursor: "pointer", borderColor: "var(--holo-blue)", color: "var(--holo-blue)" }}>
+                  Coming Soon!
                 </Link>
-                <Link to="/city-tour" className="glass-panel" style={{ padding: "12px 30px", cursor: "pointer" }}>
-                  VIEW DATA
-                </Link>
+               
               </div>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "20px", justifyContent: "center" }}>
@@ -233,19 +280,71 @@ export default function SecondPage() {
                 <h3>Tourism</h3>
                 <p style={{ fontSize: "0.9rem" }}>Offer virtual tours of landmarks and historical sites.</p>
               </div>
-              <div className="glass-panel info-panel tech-border">
-                <h3>Real Estate</h3>
-                <p style={{ fontSize: "0.9rem" }}>Show properties and their surrounding neighborhoods realistically.</p>
-              </div>
+              
             </div>
           </div>
         </section>
-
-        <section className="sp-section" style={{ padding: "120px 24px", maxWidth: "1200px", margin: "0 auto" }}>
+        
+        
+        <section className="sp-section" style={{ position: "relative", padding: "120px 24px", maxWidth: "1200px", margin: "0 auto" }}>
           <h1 className="glow-text" style={{ fontSize: "3rem", marginBottom: "20px", textAlign: "center" }}>FUTURE PRODUCTS</h1>
           <p className="subtitle" style={{ textAlign: "center", color: "var(--holo-blue)", letterSpacing: "0.2em", textTransform: "uppercase" }}>
             Research Trajectory
           </p>
+          <Hyperspeed
+           effectOptions={{
+           onSpeedUp: () => { },
+           onSlowDown: () => { },
+           distortion: 'turbulentDistortion',
+            length: 400,
+           roadWidth: 10,
+           islandWidth: 2,
+           lanesPerRoad: 4,
+            fov: 90,
+            fovSpeedUp: 150,
+           speedUp: 2,
+            carLightsFade: 0.4,
+           totalSideLightSticks: 20,
+            lightPairsPerRoadWay: 40,
+            shoulderLinesWidthPercentage: 0.05,
+            brokenLinesWidthPercentage: 0.1,
+            brokenLinesLengthPercentage: 0.5,
+            lightStickWidth: [0.12, 0.5],
+            lightStickHeight: [1.3, 1.7],
+           movingAwaySpeed: [60, 80],
+           movingCloserSpeed: [-120, -160],
+           carLightsLength: [400 * 0.03, 400 * 0.2],
+           carLightsRadius: [0.05, 0.14],
+           carWidthPercentage: [0.3, 0.5],
+           carShiftX: [-0.8, 0.8],
+           carFloorSeparation: [0, 5],
+           colors: {
+             roadColor: 0x080808,
+             islandColor: 0x0a0a0a,
+             background: 0x000000,
+             shoulderLines: 0xFFFFFF,
+             brokenLines: 0xFFFFFF,
+             leftCars: [0xD856BF, 0x6750A2, 0xC247AC],
+      rightCars: [0x03B3C3, 0x0E5EA5, 0x324555],
+      sticks: 0x03B3C3,
+    }
+  }}
+/>
+          <Waves
+  lineColor="#fff"
+  backgroundColor="rgba(255, 255, 255, 0.2)"
+  waveSpeedX={0.02}
+  waveSpeedY={0.01}
+  waveAmpX={40}
+  waveAmpY={20}
+  friction={0.9}
+  tension={0.01}
+  maxCursorMove={120}
+  xGap={12}
+  yGap={36}
+  className="pointer-events-none"
+  style={{ zIndex: 0 }}
+/>
           <div style={{ display: "flex", flexDirection: "column", gap: "24px", maxWidth: "800px", margin: "40px auto" }}>
             <div className="glass-panel tech-border" style={{ padding: "30px" }}>
               <span className="mono-label" style={{ color: "var(--holo-blue)" }}>PHASE_01</span>
@@ -273,6 +372,7 @@ export default function SecondPage() {
                 OPEN FUTURE PAGE
               </Link>
             </div>
+            
           </div>
         </section>
       </div>
