@@ -9,7 +9,7 @@ export default function Viewer() {
   const mountRef = useRef(null);
   const location = useLocation();
   const navigate = useNavigate();
-  const { image, modelUrl } = location.state || {};
+  const { image, modelUrl, overlayUrl } = location.state || {};
   const errorRef = useRef(null);
 
   useEffect(() => {
@@ -79,7 +79,7 @@ export default function Viewer() {
     </div>
   );
 }
-async function renderHologram({ image, modelUrl, onError }, mount) {
+async function renderHologram({ image, modelUrl, overlayUrl, onError }, mount) {
   mount.innerHTML = "";
 
   const scene = new THREE.Scene();
@@ -172,6 +172,39 @@ async function renderHologram({ image, modelUrl, onError }, mount) {
     scene.add(model);
   }
 
+  // Overlay glow plane (if provided)
+  if (overlayUrl) {
+    const olTex = await new Promise((resolve) => {
+      new THREE.TextureLoader().load(overlayUrl, (t) => {
+        t.colorSpace = THREE.SRGBColorSpace;
+        t.center.set(0.5, 0.5);
+        t.repeat.y = -1;
+        t.offset.y = 1;
+        t.needsUpdate = true;
+        resolve(t);
+      }, undefined, () => resolve(null));
+    });
+    if (olTex) {
+      let w = 1.3, h = 1.3;
+      if (model) {
+        const box = new THREE.Box3().setFromObject(model);
+        const size = box.getSize(new THREE.Vector3());
+        w = Math.max(1.0, size.x * 1.05);
+        h = Math.max(1.0, size.y * 1.05);
+      }
+      const oGeom = new THREE.PlaneGeometry(w, h);
+      const oMat = new THREE.MeshBasicMaterial({
+        map: olTex,
+        transparent: true,
+        opacity: 0.6,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      const overlayPlane = new THREE.Mesh(oGeom, oMat);
+      overlayPlane.position.z = 0.001;
+      scene.add(overlayPlane);
+    }
+  }
   let raf;
   function animate() {
     if (model) {
