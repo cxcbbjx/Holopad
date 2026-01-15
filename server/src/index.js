@@ -25,6 +25,8 @@ const upload = multer({ storage });
 // serve public models
 app.use("/public", express.static(path.join(__dirname, "public")));
 
+app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
+
 app.post("/api/upload", upload.single("image"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "No image file" });
@@ -54,7 +56,9 @@ app.post("/api/upload", upload.single("image"), async (req, res) => {
     fs.writeFileSync(overlayBufPath, meg.overlayBuffer);
 
     const outGlb = path.join(publicDir, `${baseName}.glb`);
-    await createTexturedGLB(imagePath, outGlb, overlayBufPath, { fit: 'contain' });
+    const applyEffects = req.query.effects !== '0';
+    const flipY = req.query.flipY === '1';
+    await createTexturedGLB(imagePath, outGlb, overlayBufPath, { fit: 'contain', applyEffects, flipY });
 
     return res.json({
       status: "ok",
