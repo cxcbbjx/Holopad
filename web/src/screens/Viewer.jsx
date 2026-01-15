@@ -105,7 +105,14 @@ async function renderHologram({ image, modelUrl }, mount) {
       // center+fit and fix texture orientation
       const box = new THREE.Box3().setFromObject(model);
       const center = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z);
       model.position.sub(center);
+      const fov = camera.fov * (Math.PI / 180);
+      const camZ = Math.abs((maxDim / 2) / Math.tan(fov / 2)) * 1.35;
+      camera.position.set(0, 0, camZ);
+      controls.target.set(0, 0, 0);
+      controls.update();
       model.traverse((child) => {
         if (child.isMesh && child.material) {
           const keys = ['map','emissiveMap','roughnessMap','metalnessMap','normalMap'];
