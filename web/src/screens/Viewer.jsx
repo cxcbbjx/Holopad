@@ -10,6 +10,7 @@ export default function Viewer() {
   const location = useLocation();
   const navigate = useNavigate();
   const { image, modelUrl } = location.state || {};
+  const errorRef = useRef(null);
 
   useEffect(() => {
     if (!image && !modelUrl) {
@@ -18,7 +19,7 @@ export default function Viewer() {
     }
     if (!mountRef.current) return;
     let cleanup = () => {};
-    const init = async () => { cleanup = await renderHologram({ image, modelUrl }, mountRef.current); };
+    const init = async () => { cleanup = await renderHologram({ image, modelUrl, onError: (msg) => { if (errorRef.current) errorRef.current.textContent = msg; } }, mountRef.current); };
     init();
     return () => { if (cleanup) cleanup(); };
   }, [image, modelUrl, navigate]);
@@ -65,10 +66,20 @@ export default function Viewer() {
         <FadeIn delay={800}>Depth</FadeIn>
         <FadeIn delay={1000}>Motion</FadeIn>
       </div>
+      <div
+        ref={errorRef}
+        style={{
+          position: "absolute",
+          top: 20,
+          right: 20,
+          color: "#ff6666",
+          fontSize: 12
+        }}
+      />
     </div>
   );
 }
-async function renderHologram({ image, modelUrl }, mount) {
+async function renderHologram({ image, modelUrl, onError }, mount) {
   mount.innerHTML = "";
 
   const scene = new THREE.Scene();
@@ -130,6 +141,7 @@ async function renderHologram({ image, modelUrl }, mount) {
       scene.add(model);
     } catch (e) {
       console.error("GLB load failed", e);
+      if (onError) onError("Model load failed");
     }
   }
 
