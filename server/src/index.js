@@ -34,11 +34,17 @@ app.post("/api/upload", upload.single("image"), async (req, res) => {
     const publicDir = path.join(__dirname, "public");
     if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir, { recursive: true });
 
-    // optional SAM segmentation to improve overlay
+    // optional SAM segmentation to improve overlay (resolve mask URL to local path)
     let overlayInputPath = null;
     const seg = await getSegmentation(imagePath);
     if (seg && seg.maskUrl) {
-      overlayInputPath = seg.maskUrl;
+      try {
+        const url = new URL(seg.maskUrl);
+        const filename = path.basename(url.pathname);
+        overlayInputPath = path.join(publicDir, filename);
+      } catch {
+        overlayInputPath = null;
+      }
     }
 
     const meg = await generateFromImage(overlayInputPath || imagePath, { size: 1024, harmonics: 12 });
