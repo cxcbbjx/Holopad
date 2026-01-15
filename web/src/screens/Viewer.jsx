@@ -183,9 +183,17 @@ async function renderHologram({ image, modelUrl, onError }, mount) {
   }
   animate();
 
+  const handleResize = () => {
+    camera.aspect = mount.clientWidth / mount.clientHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(mount.clientWidth, mount.clientHeight);
+  };
+  window.addEventListener('resize', handleResize);
+
   return () => {
     cancelAnimationFrame(raf);
     renderer.dispose();
     mount.innerHTML = "";
+    window.removeEventListener('resize', handleResize);
   };
 }
