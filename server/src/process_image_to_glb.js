@@ -46,7 +46,16 @@ async function createTexturedGLB(imagePath, outPath, textureBufferOverride = nul
       dy = Math.round((size - drawH) / 2);
     }
   }
-  ctx.drawImage(img, dx, dy, drawW, drawH);
+  // Optional vertical flip for base image
+  if (opts.flipY) {
+    ctx.save();
+    ctx.translate(0, size);
+    ctx.scale(1, -1);
+    ctx.drawImage(img, dx, dy, drawW, drawH);
+    ctx.restore();
+  } else {
+    ctx.drawImage(img, dx, dy, drawW, drawH);
+  }
 
   if (textureBufferOverride) {
     const overlayImg = await loadImage(textureBufferOverride);
