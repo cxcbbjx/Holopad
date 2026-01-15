@@ -102,6 +102,24 @@ async function renderHologram({ image, modelUrl }, mount) {
     try {
       const gltf = await loader.loadAsync(modelUrl);
       model = gltf.scene;
+      // center+fit and fix texture orientation
+      const box = new THREE.Box3().setFromObject(model);
+      const center = box.getCenter(new THREE.Vector3());
+      model.position.sub(center);
+      model.traverse((child) => {
+        if (child.isMesh && child.material) {
+          const keys = ['map','emissiveMap','roughnessMap','metalnessMap','normalMap'];
+          for (const k of keys) {
+            const t = child.material[k];
+            if (t) {
+              t.center.set(0.5, 0.5);
+              t.repeat.y = -1;
+              t.offset.y = 1;
+              t.needsUpdate = true;
+            }
+          }
+        }
+      });
       scene.add(model);
     } catch (e) {
       console.error("GLB load failed", e);
@@ -113,7 +131,14 @@ async function renderHologram({ image, modelUrl }, mount) {
     const texture = new THREE.TextureLoader().load(textureURL);
     texture.flipY = false;
     texture.colorSpace = THREE.SRGBColorSpace;
-    const geometry = new THREE.PlaneGeometry(1.2, 1.6);
+    texture.center.set(0.5, 0.5);
+    texture.repeat.y = -1;
+    texture.offset.y = 1;
+    texture.needsUpdate = true;
+    const iw = texture.image?.width || 1024;
+    const ih = texture.image?.height || 1024;
+    const ar = iw / ih;
+    const geometry = new THREE.PlaneGeometry(1.2, 1.2 / ar);
     const material = new THREE.MeshStandardMaterial({
       map: texture,
       transparent: true,
