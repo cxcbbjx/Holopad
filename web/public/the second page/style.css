@@ -1,0 +1,482 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: Inter, system-ui, sans-serif;
+}
+
+html, body {
+  height: 100%;
+  overflow-y: auto;
+}
+
+.holostage {
+  min-height: 500vh;
+  background: radial-gradient(circle at top, #0b0f1a, #04060b);
+  color: #e6e6eb;
+  overflow-x: hidden;
+}
+
+canvas {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+}
+
+/* UI */
+.ui {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.controls, button {
+  pointer-events: auto;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  opacity: 0.85;
+}
+
+.status {
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+.center-label {
+  text-align: center;
+}
+
+.center-label h1 {
+  font-size: 46px;
+  letter-spacing: 3px;
+}
+
+.center-label p {
+  margin-top: 8px;
+  opacity: 0.6;
+}
+
+.controls {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+}
+
+button {
+  padding: 12px 20px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: white;
+  border-radius: 6px;
+}
+
+.scroll-text {
+  position: absolute;
+  left: 6%;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 320px;
+}
+
+.text-block {
+  position: absolute;
+  opacity: 0;
+  transform: translateY(20px);
+  transition: all 0.8s ease;
+}
+
+.text-block.active {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ARCHITECTURE */
+.architecture {
+  position: fixed;
+  inset: 0;
+  z-index: 3;
+  padding: 80px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(40px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+/* City tour overlay */
+.city-tour {
+  position: fixed;
+  inset: 0;
+  z-index: 3;
+  padding: 80px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(40px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+.city-tour h2, .city-tour .price, .city-tour p {
+  opacity: 0;
+  transform: translateY(16px);
+  filter: blur(6px);
+  transition: opacity 0.6s ease, transform 0.6s ease, filter 0.6s ease;
+}
+.city-tour.active h2,
+.city-tour.active .price,
+.city-tour.active p {
+  opacity: 1;
+  transform: translateY(0);
+  filter: blur(0);
+}
+/* Future products overlay */
+.future-products {
+  position: fixed;
+  inset: 0;
+  z-index: 3;
+  padding: 80px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(40px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+.future-products h2 {
+  opacity: 0;
+  transform: translateY(16px);
+  filter: blur(6px);
+  transition: opacity 0.6s ease, transform 0.6s ease, filter 0.6s ease;
+}
+.future-products.active h2 {
+  opacity: 1;
+  transform: translateY(0);
+  filter: blur(0);
+}
+.future-products .badge {
+  opacity: 0;
+  transform: translateY(16px);
+  filter: blur(6px);
+  transition: opacity 0.6s ease, transform 0.6s ease, filter 0.6s ease;
+}
+.future-products .badge.active {
+  opacity: 1;
+  transform: translateY(0);
+  filter: blur(0);
+}
+
+.arch-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  max-width: 520px;
+}
+
+.arch-node {
+  padding: 20px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  opacity: 0.25;
+  transform: translateY(14px) scale(0.96);
+  filter: blur(6px);
+  transition: opacity 0.6s ease, transform 0.6s ease, filter 0.6s ease, box-shadow 0.6s ease;
+}
+
+.arch-node.active {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  filter: blur(0);
+  box-shadow: 0 0 24px rgba(120,160,255,0.25);
+}
+
+.arch-node.future {
+  border-style: dashed;
+}
+
+.arch-line {
+  width: 2px;
+  height: 24px;
+  background: linear-gradient(to bottom, transparent, #7aa0ff, transparent);
+  opacity: 0.2;
+  transform: translateY(12px);
+  filter: blur(4px);
+  transition: opacity 0.6s ease, transform 0.6s ease, filter 0.6s ease;
+}
+
+.arch-line.active {
+  opacity: 1;
+  transform: translateY(0);
+  filter: blur(0);
+}
+
+.scroll-spacer {
+  height: 400vh;
+}
+
+/* Narrative sections */
+.flow {
+  position: relative;
+  z-index: 1;
+  margin: 80vh 6% 40vh;
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.8s ease, transform 0.8s ease;
+}
+.flow.active {
+  opacity: 1;
+  transform: translateY(0);
+}
+.flow h2 {
+  font-size: 28px;
+  letter-spacing: 1px;
+  margin-bottom: 14px;
+}
+.architecture .arch-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 14px;
+}
+.arch-block {
+  padding: 14px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.04);
+}
+.arch-block span {
+  font-size: 12px;
+  opacity: 0.6;
+}
+.arch-block h3 {
+  font-size: 18px;
+  margin: 6px 0 8px;
+}
+.arch-block p {
+  font-size: 13px;
+  opacity: 0.75;
+}
+.city .price {
+  display: inline-block;
+  padding: 8px 12px;
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 6px;
+  background: rgba(255,255,255,0.06);
+  margin-bottom: 10px;
+}
+.future-products .future-list {
+  display: flex;
+  gap: 12px;
+}
+.future-products .badge {
+  padding: 8px 12px;
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.06);
+  font-size: 13px;
+}
+
+/* Stacked sections for second page */
+.section {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 18px;
+  padding: 60px 6%;
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+  position: relative;
+  overflow: hidden;
+}
+.section.in-view {
+  opacity: 1;
+  transform: translateY(0);
+}
+.section-architecture .arch-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 14px;
+}
+.section-architecture .arch-block {
+  padding: 14px;
+  border: 1px solid rgba(120,160,255,0.18);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+.section-architecture .arch-block span {
+  font-size: 12px;
+  opacity: 0.6;
+}
+.section-architecture .arch-block h3 {
+  font-size: 18px;
+  margin: 6px 0 8px;
+}
+.section-architecture .arch-block p {
+  font-size: 13px;
+  opacity: 0.75;
+}
+.section-architecture .arch-block:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(80,120,255,0.25);
+  border-color: rgba(140,180,255,0.35);
+}
+.section-architecture h2 {
+  letter-spacing: 0.5px;
+  text-shadow: 0 0 24px rgba(80,120,255,0.2);
+}
+.section-city .price {
+  display: inline-block;
+  padding: 8px 12px;
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 6px;
+  background: rgba(255,255,255,0.06);
+  margin-bottom: 10px;
+}
+.section-future .future-list {
+  display: flex;
+  gap: 12px;
+}
+.section-future .badge {
+  padding: 8px 12px;
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.06);
+  font-size: 13px;
+}
+
+.media-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
+  gap: 14px;
+}
+.section-architecture .media-grid {
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+}
+.media {
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(255,255,255,0.03);
+  opacity: 0;
+  transform: translateY(16px) scale(0.98);
+  transition: opacity 0.6s ease, transform 0.6s ease, box-shadow 0.6s ease;
+}
+.section.in-view .media {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  box-shadow: 0 6px 24px rgba(80,120,255,0.2);
+}
+.media video,
+.media img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  display: block;
+}
+.media model-viewer {
+  width: 100%;
+  height: 360px;
+  display: block;
+}
+.media.wide {
+  grid-column: 1 / -1;
+}
+.section-bg {
+  position: absolute;
+  inset: -40px -20px;
+  z-index: 0;
+  opacity: 0.18;
+  filter: blur(2px) saturate(120%);
+}
+.section.in-view .section-bg {
+  opacity: 0.28;
+}
+.section-bg::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(1200px 300px at 10% -10%, rgba(120,160,255,0.12), transparent 60%),
+              radial-gradient(900px 240px at 90% 110%, rgba(120,160,255,0.12), transparent 60%);
+  pointer-events: none;
+}
+.section-bg video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.loader-overlay {
+  position: fixed;
+  inset: 0;
+  background: #050505;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  transition: opacity 0.8s ease;
+}
+.loader-bar-bg {
+  width: 200px;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.1);
+  margin-top: 20px;
+  position: relative;
+}
+.loader-bar-fill {
+  height: 100%;
+  background: #6fa3ff;
+  transition: width 0.3s ease;
+}
+.loader-text {
+  font-family: monospace;
+  color: #6fa3ff;
+  font-size: 10px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+
+.cta-btn {
+  position: relative;
+  overflow: hidden;
+}
+.cta-btn::after {
+  content: "";
+  position: absolute;
+  inset: -40%;
+  background: radial-gradient(circle, rgba(111,163,255,0.25), transparent 60%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.cta-btn:hover::after {
+  opacity: 1;
+}
+
+.scroll-hint {
+  position: fixed;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  letter-spacing: 0.3em;
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.holo-title {
+  text-shadow:
+    0 0 30px rgba(111,163,255,0.15),
+    0 0 60px rgba(111,163,255,0.08);
+}
+
+.holo-sub {
+  opacity: 0.75;
+}

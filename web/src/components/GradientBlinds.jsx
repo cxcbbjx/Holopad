@@ -52,13 +52,27 @@ const GradientBlinds = ({
     const container = containerRef.current;
     if (!container) return;
 
-    const renderer = new Renderer({
-      dpr: dpr ?? (typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1),
-      alpha: true,
-      antialias: true
-    });
+    let renderer;
+    try {
+      renderer = new Renderer({
+        dpr: dpr ?? (typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1),
+        alpha: true,
+        antialias: true
+      });
+    } catch (e) {
+      console.error('GradientBlinds: WebGL unavailable, falling back', e);
+      container.style.backgroundImage = 'linear-gradient(90deg, rgba(14,165,233,0.18), rgba(147,51,234,0.18))';
+      container.style.pointerEvents = 'none';
+      return;
+    }
     rendererRef.current = renderer;
     const gl = renderer.gl;
+    if (!gl || !gl.canvas) {
+      console.error('GradientBlinds: GL context not ready');
+      container.style.backgroundImage = 'linear-gradient(90deg, rgba(14,165,233,0.18), rgba(147,51,234,0.18))';
+      container.style.pointerEvents = 'none';
+      return;
+    }
     const canvas = gl.canvas;
 
     canvas.style.width = '100%';

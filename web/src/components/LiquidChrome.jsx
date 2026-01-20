@@ -17,8 +17,15 @@ export default function LiquidChrome({
     if (!containerRef.current) return;
 
     const container = containerRef.current;
-    const renderer = new Renderer({ antialias: true });
-    const gl = renderer.gl;
+    let renderer;
+    let gl;
+    try {
+      renderer = new Renderer({ antialias: true });
+      gl = renderer.gl;
+    } catch (e) {
+      return;
+    }
+    if (!gl) return;
     gl.clearColor(1, 1, 1, 1);
 
     const vertexShader = `
@@ -138,7 +145,7 @@ export default function LiquidChrome({
     }
     animationId = requestAnimationFrame(update);
 
-    container.appendChild(gl.canvas);
+    if (gl?.canvas) container.appendChild(gl.canvas);
 
     return () => {
       cancelAnimationFrame(animationId);
@@ -147,10 +154,10 @@ export default function LiquidChrome({
         container.removeEventListener('mousemove', handleMouseMove);
         container.removeEventListener('touchmove', handleTouchMove);
       }
-      if (gl.canvas.parentElement) {
+      if (gl?.canvas?.parentElement) {
         gl.canvas.parentElement.removeChild(gl.canvas);
       }
-      gl.getExtension('WEBGL_lose_context')?.loseContext();
+      try { gl?.getExtension('WEBGL_lose_context')?.loseContext(); } catch {}
     };
   }, [baseColor, speed, amplitude, frequencyX, frequencyY, interactive]);
 
