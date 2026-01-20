@@ -10,6 +10,7 @@ import HolostagePage from "./screens/HolostagePage";
 import ArchitecturePage from "./screens/ArchitecturePage";
 import TorusKnotPage from "./screens/TorusKnotPage";
 import CityTourPage from "./screens/CityTourPage";
+import FuturePage from "./screens/FuturePage";
 
 function LandingWrapper() {
 
@@ -91,6 +92,7 @@ export default function App() {
         <Route path="/architecture" element={<ArchitecturePage />} />
         <Route path="/geometry/torus-knot" element={<TorusKnotPage />} />
         <Route path="/city" element={<CityTourPage />} />
+        <Route path="/future" element={<FuturePage />} />
       </Routes>
     </SmoothScroll>
   );
