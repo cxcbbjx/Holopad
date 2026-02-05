@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Routes, Route, useNavigate, useLocation } from "react-router-dom";
 import SmoothScroll from "./components/SmoothScroll";
 import { useSound } from "./utils/SoundManager";
-import Landing from "./screens/Landing";
+import TheVoid from "./screens/TheVoid";
 import SecondPage from "./screens/SecondPage";
 import Upload from "./screens/Upload";
 import Viewer from "./screens/Viewer";
@@ -84,7 +84,7 @@ export default function App() {
   return (
     <SmoothScroll>
       <Routes>
-        <Route path="/" element={<LandingWrapper />} />
+        <Route path="/" element={<TheVoid />} />
         <Route path="/second" element={<SecondPage />} />
         <Route path="/upload" element={<UploadWrapper />} />
         <Route path="/viewer" element={<ViewerWrapper />} />
