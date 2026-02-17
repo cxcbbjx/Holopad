@@ -1,0 +1,229 @@
+/* StarkUI.css - Avengers Level Interface */
+
+@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&family=Orbitron:wght@400;700&display=swap');
+
+:root {
+  --stark-cyan: #00f0ff;
+  --stark-blue: #00aaff;
+  --stark-dark: #0a0a12;
+  --stark-gold: #ffcc00;
+  --stark-alert: #ff3333;
+  --glass-bg: rgba(10, 20, 30, 0.65);
+  --hud-border: 1px solid rgba(0, 240, 255, 0.3);
+}
+
+.stark-container {
+  font-family: 'Rajdhani', sans-serif;
+  color: var(--stark-cyan);
+  pointer-events: none; /* Let clicks pass through to canvas by default */
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: hidden;
+}
+
+.stark-pointer-events {
+  pointer-events: auto;
+}
+
+/* --- HUD Corners --- */
+.hud-corner {
+  position: absolute;
+  width: 100px;
+  height: 100px;
+  border: 2px solid var(--stark-cyan);
+  opacity: 0.6;
+}
+
+.hud-tl {
+  top: 20px;
+  left: 20px;
+  border-right: none;
+  border-bottom: none;
+  border-top-left-radius: 15px;
+}
+
+.hud-tr {
+  top: 20px;
+  right: 20px;
+  border-left: none;
+  border-bottom: none;
+  border-top-right-radius: 15px;
+}
+
+.hud-bl {
+  bottom: 20px;
+  left: 20px;
+  border-right: none;
+  border-top: none;
+  border-bottom-left-radius: 15px;
+}
+
+.hud-br {
+  bottom: 20px;
+  right: 20px;
+  border-left: none;
+  border-top: none;
+  border-bottom-right-radius: 15px;
+}
+
+/* --- Arc Reactor / Central Control --- */
+.arc-reactor-container {
+  position: absolute;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  pointer-events: auto;
+}
+
+.arc-button {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff, var(--stark-cyan), transparent);
+  border: 2px solid var(--stark-blue);
+  box-shadow: 0 0 15px var(--stark-cyan), inset 0 0 10px var(--stark-blue);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+}
+
+.arc-button:hover {
+  transform: scale(1.1);
+  box-shadow: 0 0 25px var(--stark-cyan), inset 0 0 15px var(--stark-blue);
+}
+
+.arc-button.active {
+  background: radial-gradient(circle, #fff, var(--stark-gold), transparent);
+  border-color: var(--stark-gold);
+  box-shadow: 0 0 25px var(--stark-gold);
+}
+
+/* --- Holographic Toolbar --- */
+.holo-toolbar {
+  display: flex;
+  gap: 15px;
+  background: var(--glass-bg);
+  padding: 10px 20px;
+  border-radius: 30px;
+  border: var(--hud-border);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 0 10px rgba(0, 240, 255, 0.1);
+}
+
+.holo-btn {
+  background: transparent;
+  border: 1px solid rgba(0, 240, 255, 0.4);
+  color: var(--stark-cyan);
+  padding: 8px 16px;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+
+.holo-btn:hover {
+  background: rgba(0, 240, 255, 0.15);
+  border-color: var(--stark-cyan);
+  box-shadow: 0 0 8px var(--stark-cyan);
+}
+
+.holo-btn.active {
+  background: var(--stark-cyan);
+  color: #000;
+  font-weight: bold;
+  box-shadow: 0 0 15px var(--stark-cyan);
+}
+
+/* --- System Status Panel --- */
+.sys-status {
+  position: absolute;
+  top: 150px;
+  right: 40px;
+  width: 200px;
+  text-align: right;
+  font-family: 'Rajdhani', sans-serif;
+}
+
+.sys-row {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 5px;
+  font-size: 14px;
+  color: rgba(0, 240, 255, 0.8);
+}
+
+.sys-bar {
+  width: 80px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  position: relative;
+}
+
+.sys-fill {
+  height: 100%;
+  background: var(--stark-cyan);
+  box-shadow: 0 0 5px var(--stark-cyan);
+  animation: pulse-width 2s infinite;
+}
+
+@keyframes pulse-width {
+  0% { width: 30%; opacity: 0.5; }
+  50% { width: 80%; opacity: 1; }
+  100% { width: 30%; opacity: 0.5; }
+}
+
+/* --- Top Bar --- */
+.top-hud {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 60px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 40px;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent);
+}
+
+.hud-title {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 20px;
+  letter-spacing: 4px;
+  text-shadow: 0 0 10px var(--stark-cyan);
+}
+
+/* --- Animations --- */
+.scan-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: rgba(0, 240, 255, 0.5);
+  box-shadow: 0 0 10px var(--stark-cyan);
+  animation: scan 4s infinite linear;
+  pointer-events: none;
+  opacity: 0.3;
+}
+
+@keyframes scan {
+  0% { top: 0%; }
+  100% { top: 100%; }
+}

@@ -31,6 +31,13 @@ export default function Landing({ phase, onStart }) {
 
   return (
     <div style={styles.wrapper}>
+      <style>{`
+        @keyframes pulseGlow {
+          0% { text-shadow: 0 0 10px rgba(100,180,255,0.7), 0 0 30px rgba(100,180,255,0.3); }
+          50% { text-shadow: 0 0 24px rgba(100,180,255,1), 0 0 60px rgba(100,180,255,0.5); }
+          100% { text-shadow: 0 0 10px rgba(100,180,255,0.7), 0 0 30px rgba(100,180,255,0.3); }
+        }
+      `}</style>
 
       {/* LOGO - "Draws by itself" using clip-path wipe */}
       <div
@@ -70,9 +77,16 @@ export default function Landing({ phase, onStart }) {
           ...styles.taglineContainer,
           opacity: isTaglineVisible ? 1 : 0,
           transform: isTaglineVisible ? "translateY(0)" : "translateY(10px)",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: "24px",
         }}
       >
         <div style={styles.tagline}>Turn images into light.</div>
+        <div style={styles.description}>
+          The key shift here is interface design. Interaction moves away from flat screens and into physical space, where depth, motion, and intent are captured directly.
+        </div>
       </div>
 
       {/* CTA - Appears 2s later */}
@@ -158,9 +172,10 @@ const styles = {
     fontWeight: 200,
     letterSpacing: "0.6em",
     color: "rgba(255,255,255,0.95)",
-    textShadow: "0 0 40px rgba(100,180,255,0.4)", // Blueish glow
+    textShadow: "0 0 10px rgba(100,180,255,0.8), 0 0 30px rgba(100,180,255,0.4)",
     fontFamily: "'Inter', sans-serif",
     marginLeft: "0.6em", 
+    animation: "pulseGlow 2.6s ease-in-out infinite"
   },
 
   /* TAGLINE STYLES */
@@ -173,6 +188,17 @@ const styles = {
     letterSpacing: "0.3em",
     color: "rgba(255,255,255,0.5)",
     textTransform: "uppercase",
+  },
+
+  description: {
+    maxWidth: "500px",
+    fontSize: 14,
+    lineHeight: "1.6",
+    color: "rgba(255,255,255,0.6)",
+    fontWeight: 300,
+    letterSpacing: "0.02em",
+    padding: "0 20px",
+    textShadow: "0 0 10px rgba(0,0,0,0.5)",
   },
 
   /* CTA STYLES */

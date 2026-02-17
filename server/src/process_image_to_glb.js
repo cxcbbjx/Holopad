@@ -279,10 +279,14 @@ async function createPlaneGLB(imagePath, outPath, textureBufferOverride = null, 
   const canvas = createCanvas(size, size);
   const ctx = canvas.getContext('2d');
   const img = await loadImage(imagePath);
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, size, size);
+  
+  // Clear with transparent black
+  ctx.clearRect(0, 0, size, size);
+  
   const imgAR = img.width / img.height;
   let drawW = size, drawH = size, dx = 0, dy = 0;
+  
+  // Use 'contain' logic to preserve aspect ratio without cropping
   if (imgAR > 1) {
     drawW = size;
     drawH = Math.round(size / imgAR);
@@ -293,43 +297,172 @@ async function createPlaneGLB(imagePath, outPath, textureBufferOverride = null, 
     dx = Math.round((size - drawW) / 2);
   }
   ctx.drawImage(img, dx, dy, drawW, drawH);
+
+  // Apply SAM Mask if available (Crucial for "Same Figure" cutout)
+  try {
+    const seg = await getSegmentation(imagePath);
+    if (seg && seg.maskUrl) {
+      const maskImg = await loadImage(seg.maskUrl);
+      const mCanvas = createCanvas(size, size);
+      const mCtx = mCanvas.getContext('2d');
+      // Draw mask with same fit logic
+      mCtx.drawImage(maskImg, dx, dy, drawW, drawH);
+      
+      const mData = mCtx.getImageData(0, 0, size, size);
+      const imgData = ctx.getImageData(0, 0, size, size);
+      
+      for (let i = 0; i < mData.data.length; i += 4) {
+        // Mask is white on black. White = Keep.
+        const maskVal = mData.data[i]; 
+        if (maskVal < 100) {
+          imgData.data[i + 3] = 0; // Transparent
+        }
+      }
+      ctx.putImageData(imgData, 0, 0);
+    }
+  } catch (e) {
+      console.log("Mask apply failed", e);
+  }
+
   if (textureBufferOverride) {
     const overlayImg = await loadImage(textureBufferOverride);
     ctx.globalAlpha = 0.85;
     ctx.drawImage(overlayImg, 0, 0, size, size);
     ctx.globalAlpha = 1.0;
   }
+  
+  // Holographic Tint (Optional)
   if (opts.applyEffects !== false) {
-    ctx.fillStyle = 'rgba(30,160,255,0.14)';
-    ctx.fillRect(0, 0, size, size);
+    const iData = ctx.getImageData(0,0,size,size);
+    for(let i=0; i<iData.data.length; i+=4) {
+        if(iData.data[i+3] > 0) {
+            // Add blueish tint to non-transparent pixels
+            iData.data[i] = Math.min(255, iData.data[i] + 20); // R
+            iData.data[i+1] = Math.min(255, iData.data[i+1] + 40); // G
+            iData.data[i+2] = Math.min(255, iData.data[i+2] + 80); // B
+        }
+    }
+    ctx.putImageData(iData, 0, 0);
   }
+
   const pngBuffer = canvas.toBuffer('image/png');
   const tex = doc.createTexture('userTexture').setMimeType('image/png').setImage(pngBuffer);
   const mat = doc.createMaterial('userMat');
   try {
-    const pbr = mat.getPBRMetallicRoughness();
-    if (pbr && typeof pbr.setBaseColorTexture === 'function') {
-      pbr.setBaseColorTexture(tex);
-    }
-    if (typeof mat.setEmissiveFactor === 'function') mat.setEmissiveFactor([0.1, 0.35, 0.9]);
-    if (typeof mat.setAlphaMode === 'function') mat.setAlphaMode('BLEND');
-    if (typeof mat.setDoubleSided === 'function') mat.setDoubleSided(true);
-  } catch {}
+      mat.setBaseColorTexture(tex)
+         .setEmissiveFactor([0.0, 0.0, 0.0])
+         .setAlphaMode('BLEND')
+         .setDoubleSided(true)
+         .setMetallicFactor(0.1)
+         .setRoughnessFactor(0.8);
+  } catch (e) {
+      console.warn("Material setup failed:", e);
+  }
+  
+  // Create a mesh with aspect ratio adjustment
+  const ar = drawW / drawH;
+  // Base height 1.5 meters
+  const meshH = 1.5;
+  const meshW = meshH * ar;
+  const meshD = 0.1; // 10cm thickness
+
   const buffer = doc.createBuffer('buffer');
-  const positions = doc.createAccessor('positions').setType('VEC3').setArray(new Float32Array([
-    -0.7, -0.7, 0,
-     0.7, -0.7, 0,
-     0.7,  0.7, 0,
-    -0.7,  0.7, 0
-  ])).setBuffer(buffer);
-  const uvs = doc.createAccessor('uvs').setType('VEC2').setArray(new Float32Array([
-    0, 0, 1, 0, 1, 1, 0, 1
-  ])).setBuffer(buffer);
-  const indices = doc.createAccessor('indices').setType('SCALAR').setArray(new Uint16Array([0,1,2,0,2,3])).setBuffer(buffer);
-  const prim = doc.createPrimitive().setAttribute('POSITION', positions).setAttribute('TEXCOORD_0', uvs).setIndices(indices).setMaterial(mat);
-  const mesh = doc.createMesh('quad').addPrimitive(prim);
-  const node = doc.createNode('Quad').setMesh(mesh);
-  doc.getRoot().addNode(node);
+  
+  // Box Geometry (24 vertices for hard edges)
+  // Front Face (Z+)
+  const pFront = [
+    -meshW/2, -meshH/2,  meshD/2, // 0: BL
+     meshW/2, -meshH/2,  meshD/2, // 1: BR
+     meshW/2,  meshH/2,  meshD/2, // 2: TR
+    -meshW/2,  meshH/2,  meshD/2  // 3: TL
+  ];
+  // Back Face (Z-)
+  const pBack = [
+     meshW/2, -meshH/2, -meshD/2, // 4: BL (from back view)
+    -meshW/2, -meshH/2, -meshD/2, // 5: BR
+    -meshW/2,  meshH/2, -meshD/2, // 6: TR
+     meshW/2,  meshH/2, -meshD/2  // 7: TL
+  ];
+  // Top Face (Y+)
+  const pTop = [
+    -meshW/2,  meshH/2,  meshD/2,
+     meshW/2,  meshH/2,  meshD/2,
+     meshW/2,  meshH/2, -meshD/2,
+    -meshW/2,  meshH/2, -meshD/2
+  ];
+  // Bottom Face (Y-)
+  const pBottom = [
+    -meshW/2, -meshH/2, -meshD/2,
+     meshW/2, -meshH/2, -meshD/2,
+     meshW/2, -meshH/2,  meshD/2,
+    -meshW/2, -meshH/2,  meshD/2
+  ];
+  // Right Face (X+)
+  const pRight = [
+     meshW/2, -meshH/2,  meshD/2,
+     meshW/2, -meshH/2, -meshD/2,
+     meshW/2,  meshH/2, -meshD/2,
+     meshW/2,  meshH/2,  meshD/2
+  ];
+  // Left Face (X-)
+  const pLeft = [
+    -meshW/2, -meshH/2, -meshD/2,
+    -meshW/2, -meshH/2,  meshD/2,
+    -meshW/2,  meshH/2,  meshD/2,
+    -meshW/2,  meshH/2, -meshD/2
+  ];
+
+  const positionsArr = new Float32Array([
+    ...pFront, ...pBack, ...pTop, ...pBottom, ...pRight, ...pLeft
+  ]);
+
+  // UVs (Flipped Y for Front/Back to fix upside-down issue)
+  // Standard GLTF: (0,1) is Top-Left? No, (0,0) is Bottom-Left. 
+  // If user says it's upside down, we invert V.
+  const uvFront = [
+    0, 1, // BL -> Top-Left Texture
+    1, 1, // BR -> Top-Right Texture
+    1, 0, // TR -> Bottom-Right Texture
+    0, 0  // TL -> Bottom-Left Texture
+  ];
+  // Back face same orientation
+  const uvBack = [...uvFront];
+  // Sides can just stretch the edge pixel or be blank. Let's map them to 0,0 (one pixel)
+  const uvSide = [0,0, 0,0, 0,0, 0,0];
+
+  const uvsArr = new Float32Array([
+    ...uvFront, ...uvBack, ...uvSide, ...uvSide, ...uvSide, ...uvSide
+  ]);
+
+  // Indices (2 triangles per face)
+  // 0,1,2, 0,2,3
+  const createFaceIndices = (offset) => [
+    offset, offset+1, offset+2, 
+    offset, offset+2, offset+3
+  ];
+
+  const indicesArr = new Uint16Array([
+    ...createFaceIndices(0),  // Front
+    ...createFaceIndices(4),  // Back
+    ...createFaceIndices(8),  // Top
+    ...createFaceIndices(12), // Bottom
+    ...createFaceIndices(16), // Right
+    ...createFaceIndices(20)  // Left
+  ]);
+
+  const positions = doc.createAccessor('positions').setType('VEC3').setArray(positionsArr).setBuffer(buffer);
+  const uvs = doc.createAccessor('uvs').setType('VEC2').setArray(uvsArr).setBuffer(buffer);
+  const indices = doc.createAccessor('indices').setType('SCALAR').setArray(indicesArr).setBuffer(buffer);
+  
+  const prim = doc.createPrimitive()
+    .setAttribute('POSITION', positions)
+    .setAttribute('TEXCOORD_0', uvs)
+    .setIndices(indices)
+    .setMaterial(mat);
+
+  const mesh = doc.createMesh('box').addPrimitive(prim);
+  const node = doc.createNode('HoloBox').setMesh(mesh);
+  const scene = doc.createScene('Scene').addChild(node);
   await io.write(outPath, doc);
   return outPath;
 }

@@ -1,7 +1,9 @@
 import * as THREE from "three";
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader';
 import { OBJExporter } from 'three/examples/jsm/exporters/OBJExporter';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import { HandController } from './HandController';
 
 function playVoiceSkin(p) {
   try {
@@ -21,7 +23,7 @@ function playVoiceSkin(p) {
   } catch {}
 }
 
-export async function renderHologram({ image, modelUrl, overlayUrl, persona, onError, compareModelUrl, flipY, rot180, wow, alignX, alignY, zoom, stateRef, voxelDataRef, setDebugInfo, pointerRef }, mount) {
+export async function renderHologram({ image, modelUrl, overlayUrl, persona, onError, compareModelUrl, flipY, rot180, wow, alignX, alignY, zoom, stateRef, voxelDataRef, setDebugInfo, pointerRef, onVoiceStateChange, onStatsChange, onZoomChange }, mount) {
   mount.innerHTML = "";
   // designMeshes tracks ALL user-created objects (voxels, shapes, etc.) for interaction and export
   const designMeshes = [];
@@ -47,7 +49,12 @@ export async function renderHologram({ image, modelUrl, overlayUrl, persona, onE
   renderer.domElement.style.top = '0';
   renderer.domElement.style.left = '0';
   renderer.domElement.style.zIndex = '2'; // Canvas on top
+  renderer.shadowMap.enabled = true;
+  renderer.setClearColor(0x050510, 1); // Stark Dark Blue
   mount.appendChild(renderer.domElement);
+
+  // Stark Environment: Fog
+  scene.fog = new THREE.FogExp2(0x050510, 0.02);
 
   // Background Video for AR Effect
   const hiddenVideo = document.createElement('video');
@@ -75,6 +82,16 @@ export async function renderHologram({ image, modelUrl, overlayUrl, persona, onE
   mainLight.position.set(5, 10, 7);
   scene.add(mainLight);
 
+  // Add a bright light behind the model to catch the 3D edges (Rim Light)
+  const rimLight = new THREE.DirectionalLight(0xffffff, 2.5);
+  rimLight.position.set(0, 5, -5); // Positioned behind and above
+  scene.add(rimLight);
+
+  // Add a subtle fill light from the front
+  const frontLight = new THREE.PointLight(0x00ffff, 1.5); // Neon cyan for that holo-vibe
+  frontLight.position.set(2, 2, 5);
+  scene.add(frontLight);
+
   if (wow) {
     const backLight = new THREE.DirectionalLight(0x66ccff, 0.5);
     backLight.position.set(-2, 2.5, 1.5);
@@ -97,13 +114,106 @@ export async function renderHologram({ image, modelUrl, overlayUrl, persona, onE
     scene.add(scanPlane);
   }
 
+  // Holographic Material Shader
+  const holographicMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uColor: { value: new THREE.Color('#00f0ff') },
+      uTexture: { value: null } // To be set later
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      varying vec3 vNormal;
+      varying vec3 vViewPosition;
+      void main() {
+        vUv = uv;
+        vNormal = normalize(normalMatrix * normal);
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        vViewPosition = -mvPosition.xyz;
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    `,
+    fragmentShader: `
+      uniform float uTime;
+      uniform vec3 uColor;
+      uniform sampler2D uTexture;
+      varying vec2 vUv;
+      varying vec3 vNormal;
+      varying vec3 vViewPosition;
+
+      void main() {
+        // Basic Texture Color
+        vec4 texColor = texture2D(uTexture, vUv);
+        
+        // Scanlines
+        float scanline = sin(vUv.y * 200.0 + uTime * 5.0) * 0.05;
+        
+        // Fresnel Effect (Rim Light)
+        vec3 normal = normalize(vNormal);
+        vec3 viewDir = normalize(vViewPosition);
+        float fresnel = pow(1.0 - dot(normal, viewDir), 3.0);
+        
+        // Pulse Effect
+        float pulse = (sin(uTime * 2.0) + 1.0) * 0.1;
+
+        vec3 finalColor = texColor.rgb + uColor * (fresnel + scanline + pulse);
+        float alpha = texColor.a * (0.8 + fresnel); // Make edges glow more opaque
+
+        gl_FragColor = vec4(finalColor, alpha);
+      }
+    `,
+    transparent: true,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending
+  });
+
   let model, model2;
   if (modelUrl) {
     const loader = new GLTFLoader();
+    const dracoLoader = new DRACOLoader();
+    dracoLoader.setDecoderPath('/draco/');
+    dracoLoader.setDecoderConfig({ type: 'js' }); // Use JS for compatibility
+    loader.setDRACOLoader(dracoLoader);
+    
     try {
       const gltf = await loader.loadAsync(modelUrl);
       model = gltf.scene;
       playVoiceSkin(persona || "neon");
+      
+      // Apply Holographic Shader to Meshes
+      model.traverse((child) => {
+        if (child.isMesh) {
+          if (child.material.map) {
+             // Clone the shader to keep unique textures
+             const mat = holographicMaterial.clone();
+             mat.uniforms.uTexture.value = child.material.map;
+             child.material = mat;
+          }
+          child.castShadow = true;
+          child.receiveShadow = true;
+
+          // Cache original positions for warping
+          if (child.geometry) {
+             const pos = child.geometry.attributes.position;
+             child.userData.originalPosition = pos.clone();
+             
+             // Identify regions (approximate based on standard face mesh)
+             const mouth = [];
+             const brow = [];
+             for(let i=0; i<pos.count; i++) {
+                 const x = pos.getX(i);
+                 const y = pos.getY(i);
+                 // Mouth: Lower center
+                 if (Math.abs(x) < 0.15 && y < -0.05 && y > -0.25) mouth.push(i);
+                 // Brow: Upper center
+                 if (Math.abs(x) < 0.2 && y > 0.05 && y < 0.2) brow.push(i);
+             }
+             child.userData.mouthIndices = mouth;
+             child.userData.browIndices = brow;
+          }
+        }
+      });
+
       // center+fit and fix texture orientation
       const box = new THREE.Box3().setFromObject(model);
       const center = box.getCenter(new THREE.Vector3());
@@ -117,20 +227,9 @@ export async function renderHologram({ image, modelUrl, overlayUrl, persona, onE
       controls.update();
       model.traverse((child) => {
         if (child.isMesh && child.material) {
-          const keys = ['map','emissiveMap','roughnessMap','metalnessMap','normalMap'];
-          for (const k of keys) {
-            const t = child.material[k];
-            if (t) {
-              t.center.set(0.5, 0.5);
-              const repX = 1 / zoom;
-              const repY = (flipY ? -1 : 1) / zoom;
-              t.repeat.set(repX, repY);
-              t.rotation = rot180 ? Math.PI : 0;
-              t.offset.x = 0.5 - (repX * 0.5) + alignX;
-              t.offset.y = 0.5 - (repY * 0.5) + alignY;
-              t.rotation = rot180 ? Math.PI : 0;
-              t.needsUpdate = true;
-            }
+          if (child.material.uniforms && child.material.uniforms.uTexture) {
+             // For shader material, we modify the texture itself if needed, or uniforms
+             // But for now let's assume UVs are correct from process_image_to_glb
           }
         }
       });
@@ -139,28 +238,21 @@ export async function renderHologram({ image, modelUrl, overlayUrl, persona, onE
         try {
           const gltf2 = await loader.loadAsync(compareModelUrl);
           model2 = gltf2.scene;
-          const box2 = new THREE.Box3().setFromObject(model2);
-          const center2 = box2.getCenter(new THREE.Vector3());
-          model2.position.sub(center2);
+          
+          // Apply Holographic Shader to Model 2
           model2.traverse((child) => {
-            if (child.isMesh && child.material) {
-              const keys = ['map','emissiveMap','roughnessMap','metalnessMap','normalMap'];
-              for (const k of keys) {
-                const t = child.material[k];
-                if (t) {
-                  t.center.set(0.5, 0.5);
-                  const repX = 1 / zoom;
-                  const repY = (flipY ? -1 : 1) / zoom;
-                  t.repeat.set(repX, repY);
-                  t.rotation = rot180 ? Math.PI : 0;
-                  t.offset.x = 0.5 - (repX * 0.5) + alignX;
-                  t.offset.y = 0.5 - (repY * 0.5) + alignY;
-                  t.rotation = rot180 ? Math.PI : 0;
-                  t.needsUpdate = true;
-                }
+            if (child.isMesh) {
+              if (child.material.map) {
+                 const mat = holographicMaterial.clone();
+                 mat.uniforms.uTexture.value = child.material.map;
+                 child.material = mat;
               }
             }
           });
+
+          const box2 = new THREE.Box3().setFromObject(model2);
+          const center2 = box2.getCenter(new THREE.Vector3());
+          model2.position.sub(center2);
           if (rot180) model2.rotation.z = Math.PI;
         } catch {}
       }
@@ -173,7 +265,7 @@ export async function renderHologram({ image, modelUrl, overlayUrl, persona, onE
         scene.add(model);
       }
     } catch (e) {
-      console.error("GLB load failed", e);
+      console.error("HologramEngine: GLB load failed", e);
       if (onError) onError("Model load failed");
     }
   }
@@ -249,20 +341,38 @@ export async function renderHologram({ image, modelUrl, overlayUrl, persona, onE
     }
   }
   if (wow) {
-    const pCount = 400;
+    // Stark Particle System: "Data Motes"
+    const pCount = 800;
     const geom = new THREE.BufferGeometry();
     const positions = new Float32Array(pCount * 3);
     for (let i = 0; i < pCount; i++) {
-      const r = 1.4 + Math.random() * 0.6;
-      const a = Math.random() * Math.PI * 2;
-      positions[i * 3] = Math.cos(a) * r;
-      positions[i * 3 + 1] = (Math.random() - 0.5) * 0.8;
-      positions[i * 3 + 2] = Math.sin(a) * r;
+      positions[i * 3] = (Math.random() - 0.5) * 15;
+      positions[i * 3 + 1] = (Math.random() - 0.5) * 10;
+      positions[i * 3 + 2] = (Math.random() - 0.5) * 15;
     }
     geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    const mat = new THREE.PointsMaterial({ color: 0x66ccff, size: 0.02, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending });
+    const mat = new THREE.PointsMaterial({ 
+        color: 0x00aaff, 
+        size: 0.03, 
+        transparent: true, 
+        opacity: 0.4, 
+        blending: THREE.AdditiveBlending 
+    });
     const points = new THREE.Points(geom, mat);
     scene.add(points);
+
+    // Stark Grid System
+    const gridHelper = new THREE.GridHelper(20, 40, 0x00f0ff, 0x004466);
+    gridHelper.position.y = -0.6;
+    gridHelper.material.transparent = true;
+    gridHelper.material.opacity = 0.3;
+    scene.add(gridHelper);
+
+    const polarGrid = new THREE.PolarGridHelper(8, 16, 8, 64, 0x00f0ff, 0x00f0ff);
+    polarGrid.position.y = -0.61;
+    polarGrid.material.transparent = true;
+    polarGrid.material.opacity = 0.15;
+    scene.add(polarGrid);
   }
   let raf;
   const raycaster = new THREE.Raycaster();
@@ -279,6 +389,71 @@ export async function renderHologram({ image, modelUrl, overlayUrl, persona, onE
   scene.add(wall);
 
   const objects = [floor, wall];
+
+  // Project Valuation Logic
+  function updateStats() {
+    // Base value + (Voxels * 15) + (Models * 100)
+    const voxelCount = voxelDataRef.current.length;
+    const modelCount = designMeshes.filter(m => !m.userData.isVoxel).length;
+    const value = 50 + (voxelCount * 15) + (modelCount * 100);
+    
+    // Notify UI
+    if (onStatsChange) {
+      onStatsChange({ count: voxelCount + modelCount, value });
+    }
+  }
+
+  // --- ACTIONS ---
+  
+  function undo() {
+    if (designMeshes.length === 0) return;
+    const last = designMeshes.pop();
+    scene.remove(last);
+    
+    // Also remove from objects array to keep raycasting clean
+    const idx = objects.indexOf(last);
+    if (idx > -1) objects.splice(idx, 1);
+
+    // If it was a voxel, remove from voxelDataRef
+    if (last.userData.isVoxel) {
+      // Find matching position in voxelDataRef (a bit expensive but safe)
+      const vIdx = voxelDataRef.current.findIndex(v => v.equals(last.position));
+      if (vIdx > -1) voxelDataRef.current.splice(vIdx, 1);
+    }
+    updateStats();
+  }
+
+  function clearVoxels() {
+    // Remove all design meshes
+    designMeshes.forEach(m => scene.remove(m));
+    
+    // Clear arrays
+    designMeshes.length = 0;
+    voxelDataRef.current = [];
+    
+    // Clean up objects array (keep floor and wall)
+    // Filter out anything that isn't floor or wall
+    const keep = [floor, wall];
+    objects.length = 0;
+    objects.push(...keep);
+    updateStats();
+  }
+
+  function exportVoxels() {
+    const exporter = new OBJExporter();
+    // Export only the design meshes, not the floor/grid/helpers
+    const group = new THREE.Group();
+    designMeshes.forEach(m => group.add(m.clone()));
+    
+    const result = exporter.parse(group);
+    const blob = new Blob([result], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `holopad-project-${Date.now()}.obj`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
 
   // Visual Cursor for Hand Tracking
   const cursorGeo = new THREE.SphereGeometry(0.05, 16, 16);
@@ -319,81 +494,182 @@ export async function renderHologram({ image, modelUrl, overlayUrl, persona, onE
     });
   }
 
-  function placeAtPointer(overrideTool = null) {
-    const { tool } = stateRef?.current || {};
-    const currentTool = overrideTool || tool;
-    
-    if (currentTool === "voxel") {
-      if (rollOverMesh.visible) {
-        // Prevent duplicate placement
-        const pos = rollOverMesh.position;
-        const exists = voxelDataRef.current.some(v => v.equals(pos));
-        if (exists) return;
-
-        const voxel = new THREE.Mesh(voxelGeo, voxelMaterial);
-        const edges = new THREE.LineSegments(voxelEdgesGeo, voxelEdgeMaterial);
-        voxel.add(edges);
-        voxel.position.copy(pos);
-        scene.add(voxel);
-        objects.push(voxel);
-        designMeshes.push(voxel);
-        if (voxelDataRef) voxelDataRef.current.push(voxel.position.clone());
-      }
-      return;
-    }
-
+  // Smart Placement Helper
+  function getSmartPlacement(tool, mouse) {
     raycaster.setFromCamera(mouse, camera);
-    // Minecraft-Style: Only interact with Floor and Existing Objects
+    const { smartStack } = stateRef?.current || { smartStack: true };
+    
+    // 1. Check existing design meshes and floor
     const interactables = [floor, ...designMeshes];
     const hits = raycaster.intersectObjects(interactables, false);
     
-    let p;
-    if (hits.length) {
-      p = hits[0].point;
-    } else {
-      p = new THREE.Vector3();
-      raycaster.ray.at(3, p); // Air placement default
+    if (hits.length > 0) {
+      const hit = hits[0];
+      const normal = hit.face?.normal?.clone().normalize() || new THREE.Vector3(0, 1, 0);
+      const point = hit.point.clone();
+      let finalPos = point.clone();
+
+      if (tool === "voxel") {
+        finalPos.add(normal.multiplyScalar(0.25));
+        finalPos.divideScalar(0.5).floor().multiplyScalar(0.5).addScalar(0.25);
+        return { pos: finalPos, valid: true, hitMesh: hit.object };
+      } else if (tool === "cube") {
+        // Smart Stacking: Offset by half-size (0.2) to sit perfectly on top
+        if (smartStack) finalPos.add(normal.multiplyScalar(0.2));
+        return { pos: finalPos, valid: true, hitMesh: hit.object };
+      } else if (tool === "sphere") {
+        // Smart Stacking: Offset by radius (0.28)
+        if (smartStack) finalPos.add(normal.multiplyScalar(0.28));
+        return { pos: finalPos, valid: true, hitMesh: hit.object };
+      } else if (tool === "pyramid") {
+        if (smartStack) finalPos.add(normal.multiplyScalar(0.25));
+        return { pos: finalPos, valid: true, hitMesh: hit.object };
+      } else if (tool === "model") {
+        return { pos: point, valid: true, hitMesh: hit.object };
+      }
     }
-      // If hitting a voxel, we might want to place ON it (normal) - Logic handled by tool specific code if needed
-      // But for simple shapes, center on point is default behavior in this prototype
-      
+    
+    // 2. Voxel-Specific "Bridge Building" (Proximity Snap)
+    // Only if we missed meshes but are near a voxel
+    if (tool === "voxel" && voxelDataRef.current.length > 0) {
+       const ray = raycaster.ray;
+       let closestDist = Infinity;
+       let closestVoxel = null;
+       
+       for (const vPos of voxelDataRef.current) {
+          const dist = ray.distanceSqToPoint(vPos);
+          if (dist < 0.25 && dist < closestDist) {
+             closestDist = dist;
+             closestVoxel = vPos;
+          }
+       }
+
+       if (closestVoxel) {
+         const closestPointOnRay = new THREE.Vector3();
+         ray.closestPointToPoint(closestVoxel, closestPointOnRay);
+         const diff = closestPointOnRay.sub(closestVoxel);
+         const absX = Math.abs(diff.x);
+         const absY = Math.abs(diff.y);
+         const absZ = Math.abs(diff.z);
+         const normal = new THREE.Vector3();
+         if (absX >= absY && absX >= absZ) normal.set(Math.sign(diff.x), 0, 0);
+         else if (absY >= absX && absY >= absZ) normal.set(0, Math.sign(diff.y), 0);
+         else normal.set(0, 0, Math.sign(diff.z));
+
+         const finalPos = closestVoxel.clone().add(normal.multiplyScalar(0.5));
+         return { pos: finalPos, valid: true, hitMesh: null };
+       }
+    }
+
+    // 3. Air Fallback (if no hit)
+    const point = new THREE.Vector3();
+    raycaster.ray.at(3, point);
+    if (tool === "voxel") {
+        point.divideScalar(0.5).floor().multiplyScalar(0.5).addScalar(0.25);
+    }
+    return { pos: point, valid: true, hitMesh: null };
+  }
+
+  function placeAtPointer(overrideTool = null) {
+    const { tool, mirrorX, mirrorZ } = stateRef?.current || {};
+    const currentTool = overrideTool || tool;
+    
+    // Use Smart Placement logic
+    const placement = getSmartPlacement(currentTool, mouse);
+    if (!placement.valid) return;
+
+    const p = placement.pos;
+
+    // Helper to actually create the mesh
+    const createMesh = (position) => {
       let m;
-      if (currentTool === "cube") {
+      if (currentTool === "voxel") {
+        // Check for duplicates at this position
+        if (voxelDataRef.current.some(v => v.distanceTo(position) < 0.1)) return null;
+        
+        const voxel = new THREE.Mesh(voxelGeo, voxelMaterial);
+        const edges = new THREE.LineSegments(voxelEdgesGeo, voxelEdgeMaterial);
+        voxel.add(edges);
+        voxel.position.copy(position);
+        voxel.userData.isVoxel = true;
+        scene.add(voxel);
+        if (voxelDataRef) voxelDataRef.current.push(voxel.position.clone());
+        updateStats();
+        return voxel;
+      } else if (currentTool === "cube") {
         const geom = new THREE.BoxGeometry(0.4, 0.4, 0.4);
-        const mat = new THREE.MeshStandardMaterial({ color: 0x66ccff, emissive: new THREE.Color(0x113355), roughness: 0.3, metalness: 0.2 });
+        const mat = new THREE.MeshStandardMaterial({ color: 0x00f0ff, roughness: 0.2, metalness: 0.8 });
+        const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geom), new THREE.LineBasicMaterial({ color: 0x00ffff }));
         m = new THREE.Mesh(geom, mat);
-        m.position.copy(p);
+        m.add(edges);
+        m.position.copy(position);
         scene.add(m);
+        updateStats();
+        return m;
       } else if (currentTool === "sphere") {
         const geom = new THREE.SphereGeometry(0.28, 24, 24);
-        const mat = new THREE.MeshStandardMaterial({ color: 0xff66aa, emissive: new THREE.Color(0x331122), roughness: 0.25, metalness: 0.3 });
+        const mat = new THREE.MeshStandardMaterial({ color: 0xff3366, roughness: 0.2, metalness: 0.8 });
         m = new THREE.Mesh(geom, mat);
-        m.position.copy(p);
+        m.position.copy(position);
         scene.add(m);
+        updateStats();
+        return m;
       } else if (currentTool === "pyramid") {
-        const geom = new THREE.ConeGeometry(0.3, 0.5, 4);
-        const mat = new THREE.MeshStandardMaterial({ color: 0xffcc00, emissive: new THREE.Color(0x553300), roughness: 0.3 });
+        const geom = new THREE.ConeGeometry(0.28, 0.5, 4);
+        const mat = new THREE.MeshStandardMaterial({ color: 0xffcc00, roughness: 0.2, metalness: 0.8 });
         m = new THREE.Mesh(geom, mat);
-        m.position.copy(p);
-        m.position.y += 0.25; // Sit on floor
+        m.position.copy(position);
+        m.rotation.y = Math.PI / 4;
         scene.add(m);
-      } else if (currentTool === "model") {
+        updateStats();
+        return m;
+      }
+      return null;
+    };
+
+    if (currentTool === "model") {
         const loader = new GLTFLoader();
-        loader.load("http://localhost:5000/public/head_template.glb", (gltf) => {
-          const mModel = gltf.scene;
-          mModel.position.copy(p);
-          mModel.scale.set(0.25, 0.25, 0.25);
-          scene.add(mModel);
-          designMeshes.push(mModel);
-          objects.push(mModel);
+        // Model placement logic (keep existing mostly, but use p)
+        const positions = [p.clone()];
+        if (mirrorX) positions.push(new THREE.Vector3(-p.x, p.y, p.z));
+        if (mirrorZ) positions.push(new THREE.Vector3(p.x, p.y, -p.z));
+        if (mirrorX && mirrorZ) positions.push(new THREE.Vector3(-p.x, p.y, -p.z));
+
+        // Use relative path via proxy
+        loader.load("/public/head_template.glb", (gltf) => {
+            positions.forEach(pos => {
+                const mModel = gltf.scene.clone();
+                mModel.position.copy(pos);
+                mModel.scale.set(0.25, 0.25, 0.25);
+                scene.add(mModel);
+                designMeshes.push(mModel);
+                objects.push(mModel);
+            });
+            updateStats();
         });
-      }
-      
-      if (m) {
-        designMeshes.push(m);
-        objects.push(m);
-      }
-    // End of placement logic
+        return;
+    }
+
+    // Symmetry Logic
+    const positions = [p.clone()];
+    if (mirrorX) positions.push(new THREE.Vector3(-p.x, p.y, p.z));
+    if (mirrorZ) positions.push(new THREE.Vector3(p.x, p.y, -p.z));
+    if (mirrorX && mirrorZ) positions.push(new THREE.Vector3(-p.x, p.y, -p.z));
+
+    // Filter unique positions for voxels (snap grid can cause overlap on axes)
+    const uniquePos = [];
+    positions.forEach(pos => {
+       if (!uniquePos.some(u => u.distanceTo(pos) < 0.1)) uniquePos.push(pos);
+    });
+
+    uniquePos.forEach(pos => {
+       const mesh = createMesh(pos);
+       if (mesh) {
+         if (currentTool === "pyramid") mesh.position.y += 0.25;
+         designMeshes.push(mesh);
+         objects.push(mesh);
+       }
+    });
   }
   const brushGeom = new THREE.BufferGeometry();
   const brushPositions = [];
@@ -436,79 +712,31 @@ export async function renderHologram({ image, modelUrl, overlayUrl, persona, onE
 
   function updateRollOver() {
     const { tool, creative } = stateRef?.current || {};
-    if (creative && tool === "voxel") {
-      raycaster.setFromCamera(mouse, camera);
-      
-      // 1. Prioritize hitting existing design meshes (voxels, spheres, etc.)
-      const meshIntersects = raycaster.intersectObjects(designMeshes, false);
-      if (meshIntersects.length > 0) {
-        const intersect = meshIntersects[0];
-        rollOverMesh.visible = true;
-        rollOverMesh.position.copy(intersect.point).add(intersect.face.normal.multiplyScalar(0.25));
-        rollOverMesh.position.divideScalar(0.5).floor().multiplyScalar(0.5).addScalar(0.25);
-        return;
-      }
-
-      // 2. "Bridge Building" - Check proximity to existing voxels if we missed them
-      // This allows drawing off the side of a voxel even if the face isn't visible
-      let closestDist = Infinity;
-      let closestVoxel = null;
-      const ray = raycaster.ray;
-      
-      // Optimization: Only check if we have voxels
-      if (voxelDataRef.current.length > 0) {
-         for (const vPos of voxelDataRef.current) {
-            // Check distance from Ray to Voxel Center
-            const dist = ray.distanceSqToPoint(vPos);
-            // Threshold: 0.5 unit radius (squared is 0.25) - allows slight miss
-            if (dist < 0.25 && dist < closestDist) {
-               closestDist = dist;
-               closestVoxel = vPos;
+    
+    // Support visual cursor for all placement tools
+    if (creative && (tool === "voxel" || tool === "cube" || tool === "sphere")) {
+        const res = getSmartPlacement(tool, mouse);
+        
+        if (res.valid) {
+            rollOverMesh.visible = true;
+            rollOverMesh.position.copy(res.pos);
+            
+            // Adjust Cursor Size & Color
+            if (tool === "voxel") {
+                rollOverMesh.scale.set(1, 1, 1); // 0.5 box
+                rollOverMesh.material.color.setHex(0x4488ff);
+            } else if (tool === "cube") {
+                rollOverMesh.scale.set(0.8, 0.8, 0.8); // 0.4 box
+                rollOverMesh.material.color.setHex(0x00f0ff);
+            } else if (tool === "sphere") {
+                rollOverMesh.scale.set(1.12, 1.12, 1.12); // ~0.56 diameter
+                rollOverMesh.material.color.setHex(0xff3366);
             }
-         }
-      }
-
-      if (closestVoxel) {
-         // We missed the mesh but are close to a voxel -> snap to nearest face
-         // Project center onto ray to find where we are "pointing" relative to center
-         const closestPointOnRay = new THREE.Vector3();
-         ray.closestPointToPoint(closestVoxel, closestPointOnRay);
-         
-         const diff = closestPointOnRay.sub(closestVoxel);
-         // Find dominant axis
-         const absX = Math.abs(diff.x);
-         const absY = Math.abs(diff.y);
-         const absZ = Math.abs(diff.z);
-         
-         const normal = new THREE.Vector3();
-         if (absX >= absY && absX >= absZ) normal.set(Math.sign(diff.x), 0, 0);
-         else if (absY >= absX && absY >= absZ) normal.set(0, Math.sign(diff.y), 0);
-         else normal.set(0, 0, Math.sign(diff.z));
-
-         rollOverMesh.visible = true;
-         rollOverMesh.position.copy(closestVoxel).add(normal.multiplyScalar(0.5));
-         return;
-      }
-
-      // 3. Fallback to Floor (No Wall)
-      const intersects = raycaster.intersectObjects([floor], false);
-      if (intersects.length > 0) {
-        const intersect = intersects[0];
-        rollOverMesh.visible = true;
-        rollOverMesh.position.copy(intersect.point).add(intersect.face.normal.multiplyScalar(0.25));
-        rollOverMesh.position.divideScalar(0.5).floor().multiplyScalar(0.5).addScalar(0.25);
-      } else {
-         // Air Drawing Fallback: Place at fixed distance (3 units)
-         const distance = 3;
-         const point = new THREE.Vector3();
-         raycaster.ray.at(distance, point);
-         
-         rollOverMesh.visible = true;
-         rollOverMesh.position.copy(point);
-         rollOverMesh.position.divideScalar(0.5).floor().multiplyScalar(0.5).addScalar(0.25);
-      }
+        } else {
+             rollOverMesh.visible = false;
+        }
     } else {
-      rollOverMesh.visible = false;
+        rollOverMesh.visible = false;
     }
   }
 
@@ -516,89 +744,68 @@ export async function renderHologram({ image, modelUrl, overlayUrl, persona, onE
     const { creative } = stateRef?.current || {};
     if (creative) placeAtPointer();
   });
-  let handsLoopId;
-  let videoStream = null;
-  let handsInstance = null;
-  let isWebcamActive = false;
-  let lastPlacementTime = 0; // Moved outside the loop for persistence
-  let lastPlacementPos = new THREE.Vector3(Infinity, Infinity, Infinity); // Track last placement for drag-drawing
-  let isPinchingState = false; // Persistent state for pinch hysteresis
 
-  async function loadHands() {
-    if (window.Hands) return;
-    const s1 = document.createElement('script');
-    s1.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js';
-    const s2 = document.createElement('script');
-    s2.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js';
-    await new Promise((r) => { s1.onload = r; document.body.appendChild(s1); });
-    await new Promise((r) => { s2.onload = r; document.body.appendChild(s2); });
-  }
+  let handController = null;
+  let isWebcamActive = false;
+  let lastPlacementPos = new THREE.Vector3(Infinity, Infinity, Infinity);
+  let isPinchingState = false;
+  let lastScaleDist = -1;
+  let grabbedObject = null;
+  let lastDeleteTime = 0;
 
   async function startWebcam() {
     if (isWebcamActive) return;
     try {
-      setDebugInfo("Loading Hand Model...");
-      await loadHands();
-      setDebugInfo("Requesting Camera...");
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 640, height: 480 } });
-      videoStream = stream;
-      videoRef.current.srcObject = stream;
-      await videoRef.current.play();
+      setDebugInfo("Initializing Hand Controller...");
       
-      // Enable AR Mode: Show video background and make scene transparent
+      // AR Mode Setup
       videoRef.current.style.display = 'block';
-      scene.background = null; 
+      scene.background = null;
+      isWebcamActive = true;
 
-      setDebugInfo("Initializing Detector...");
-      handsInstance = new window.Hands({ locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/${f}` });
-      handsInstance.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
-      
-      handsInstance.onResults((res) => {
-        if (res.multiHandLandmarks && res.multiHandLandmarks.length > 0) {
-          const lm = res.multiHandLandmarks[0];
-          const { creative, brushActive, tool } = stateRef?.current || {};
-          
-          // Debug Stats
-          const x = lm[8].x;
-          const y = lm[8].y;
-          
-          // Move 2D Debug Pointer
-          if (pointerRef && pointerRef.current) {
-            pointerRef.current.style.display = 'block';
-            pointerRef.current.style.left = `${(1 - x) * 100}%`;
-            pointerRef.current.style.top = `${y * 100}%`;
-          }
-
-          // Mirror x for natural feel
-          const targetX = (1 - x) * 2 - 1; 
-          const targetY = -(y * 2 - 1);
-          
-          // Adaptive Smoothing (Smart Filter)
-          // Calculate speed of movement
-          const deltaMove = Math.sqrt(Math.pow(targetX - mouse.x, 2) + Math.pow(targetY - mouse.y, 2));
-          // If moving fast (>0.05 per frame), be responsive (alpha 0.5)
-          // If moving slow (precision work), be smooth (alpha 0.1)
-          const alpha = deltaMove > 0.05 ? 0.5 : 0.1;
-          
-          mouse.x = mouse.x * (1 - alpha) + targetX * alpha;
-          mouse.y = mouse.y * (1 - alpha) + targetY * alpha;
-          
-          updateRollOver();
-
-          // Update Visual Cursor
-          raycaster.setFromCamera(mouse, camera);
-          // Intersect with floor and design meshes (Surface Snapping)
-          const cursorHits = raycaster.intersectObjects([floor, ...designMeshes], false);
-          if (cursorHits.length > 0) {
-            handCursor.position.copy(cursorHits[0].point);
-          } else {
-             // Air Cursor Fallback
-             const point = new THREE.Vector3();
-             raycaster.ray.at(3, point); // Same distance as rollOver
-             handCursor.position.copy(point);
-          }
-          handCursor.visible = creative; // Only show in creative mode
+      handController = new HandController(videoRef.current, (data) => {
+        const { creative, brushActive, tool } = stateRef?.current || {};
+        
+        if (data.hands.length > 0) {
+            const { center, gesture, pinchDistance, scaleDistance } = data;
             
+            // 1. Move Cursor (Index Tip)
+            // Mirror X
+            const x = center.x;
+            const y = center.y;
+            const targetX = (1 - x) * 2 - 1; 
+            const targetY = -(y * 2 - 1);
+            
+            // Smoothing
+            const deltaMove = Math.sqrt(Math.pow(targetX - mouse.x, 2) + Math.pow(targetY - mouse.y, 2));
+            const alpha = deltaMove > 0.05 ? 0.5 : 0.1;
+            mouse.x = mouse.x * (1 - alpha) + targetX * alpha;
+            mouse.y = mouse.y * (1 - alpha) + targetY * alpha;
+            
+            updateRollOver();
+            
+            // Depth Calculation (Map hand size to Z-depth)
+            // Hand size typically 0.05 (far) to 0.25 (close)
+            // Map to camera distance: Far = 5m, Close = 1m
+            const handDepth = center.depth || 0.1;
+            const targetDist = Math.max(1, Math.min(5, 5 - (handDepth - 0.05) * 20));
+
+            // Update Visual Cursor
+            raycaster.setFromCamera(mouse, camera);
+            const cursorHits = raycaster.intersectObjects([floor, ...designMeshes], false);
+            
+            // Priority: Surface Snap > Air Depth
+            // But if Grabbing, we might want to follow Hand Depth if pulling away?
+            // For now, keep surface snap for placing blocks easily.
+            if (cursorHits.length > 0) {
+               handCursor.position.copy(cursorHits[0].point);
+            } else {
+               const point = new THREE.Vector3();
+               raycaster.ray.at(targetDist, point);
+               handCursor.position.copy(point);
+            }
+            handCursor.visible = creative;
+
             // Add a ring helper for better depth perception
             if (!handCursor.userData.ring) {
                 const ringGeo = new THREE.RingGeometry(0.08, 0.1, 32);
@@ -610,70 +817,124 @@ export async function renderHologram({ image, modelUrl, overlayUrl, persona, onE
             if (handCursor.userData.ring) {
                 handCursor.userData.ring.lookAt(camera.position);
             }
-          
-          // Pinch Detection (Thumb tip 4, Index tip 8)
-          const thumb = lm[4];
-          const index = lm[8];
-          const dist = Math.sqrt(Math.pow(thumb.x - index.x, 2) + Math.pow(thumb.y - index.y, 2));
-          
-          // Pinch Hysteresis (Schmitt Trigger)
-          // Enter pinch at < 0.05, Exit pinch at > 0.08
-          if (isPinchingState) {
-             if (dist > 0.08) isPinchingState = false;
-          } else {
-             if (dist < 0.05) isPinchingState = true;
-          }
 
-          // Normalized Pinch Strength for UI
-          const pinchStrength = Math.max(0, Math.min(1, (0.15 - dist) / (0.15 - 0.05)));
+            // 2. Handle Gestures
 
-          setDebugInfo(`Hands detected: 1\nPinch Strength: ${(pinchStrength * 100).toFixed(0)}%\nState: ${creative ? 'Creative' : 'View'}`);
-
-          if (isPinchingState) {
-            if (pointerRef && pointerRef.current) pointerRef.current.style.borderColor = '#00ff00';
+            // Reset cursor state (IDLE = Yellow)
+            if (!isPinchingState && gesture !== 'delete') {
+                 handCursor.material.color.setHex(0xffff00);
+                 if (handCursor.userData.ring) handCursor.userData.ring.material.color.setHex(0xffff00);
+                 handCursor.scale.set(1, 1, 1);
+            }
             
-            handCursor.material.color.setHex(0x00ff00); // Green when pinching
-            if (handCursor.userData.ring) handCursor.userData.ring.material.color.setHex(0x00ff00);
-            handCursor.scale.set(1.2, 1.2, 1.2);
-            
-            if (creative) {
-              if (tool === "brush" && brushActive) {
-                brushAtPointer();
-              } else {
-                // Drag-to-Spawn Logic: "Follow me" effect
-                if (rollOverMesh.visible) {
-                    const dist = lastPlacementPos.distanceTo(rollOverMesh.position);
-                    if (dist >= 0.45) {
-                        placeAtPointer();
-                        lastPlacementPos.copy(rollOverMesh.position);
+            // DELETE (Two Fingers / Peace Sign)
+            if (gesture === 'delete') {
+                 handCursor.material.color.setHex(0xff0000);
+                 if (handCursor.userData.ring) handCursor.userData.ring.material.color.setHex(0xff0000);
+                 
+                 if (creative && Date.now() - lastDeleteTime > 500) { // 500ms cooldown
+                    raycaster.setFromCamera(mouse, camera);
+                    const hits = raycaster.intersectObjects(designMeshes, false);
+                    if (hits.length > 0) {
+                        const target = hits[0].object;
+                        scene.remove(target);
+                        designMeshes.splice(designMeshes.indexOf(target), 1);
+                        target.geometry.dispose();
+                        target.material.dispose();
+                        lastDeleteTime = Date.now();
+                        
+                        // Sound effect could go here
+                        if (stateRef.current.api && stateRef.current.api.playSound) {
+                            // stateRef.current.api.playSound('delete'); 
+                        }
+                    }
+                 }
+                 return; // Skip other gestures
+            }
+
+            // SCALE (Two Hands)
+            if (gesture === 'scale') {
+                if (lastScaleDist > 0) {
+                    const delta = scaleDistance - lastScaleDist;
+                    // Zoom sensitivity
+                    if (Math.abs(delta) > 0.005) {
+                         // Pinch Out (positive delta) -> Zoom In (increase zoom val)
+                         if (onZoomChange) onZoomChange(z => Math.max(0.1, Math.min(5, z + delta * 2)));
                     }
                 }
-              }
+                lastScaleDist = scaleDistance;
+            } else {
+                lastScaleDist = -1;
             }
-          } else {
-            lastPlacementPos.set(Infinity, Infinity, Infinity);
-            if (pointerRef && pointerRef.current) pointerRef.current.style.borderColor = 'yellow';
+
+            // PINCH (Grab/Place)
+            const isPinching = gesture === 'pinch';
             
-            handCursor.material.color.setHex(0xffff00); // Yellow when idle
-            if (handCursor.userData.ring) handCursor.userData.ring.material.color.setHex(0xffff00);
-            handCursor.scale.set(1.0, 1.0, 1.0);
-          }
+            // Hysteresis
+            if (isPinchingState && !isPinching) {
+                // Release
+                isPinchingState = false;
+                if (grabbedObject) {
+                    grabbedObject.material.emissive.setHex(0x000000);
+                    grabbedObject = null;
+                }
+            } else if (!isPinchingState && isPinching) {
+                // Grab/Start
+                isPinchingState = true;
+                
+                if (creative) {
+                    // Try to grab existing object
+                    raycaster.setFromCamera(mouse, camera);
+                    const hits = raycaster.intersectObjects(designMeshes, false);
+                    if (hits.length > 0) {
+                        grabbedObject = hits[0].object;
+                        grabbedObject.material.emissive.setHex(0x444444);
+                    }
+                }
+            }
+
+            setDebugInfo(`Hands: ${data.hands.length}\nGesture: ${gesture}\nState: ${creative ? 'Creative' : 'View'}`);
+
+            if (isPinchingState) {
+                if (pointerRef && pointerRef.current) pointerRef.current.style.borderColor = '#00ff00';
+                handCursor.material.color.setHex(0x00ff00);
+                if (handCursor.userData.ring) handCursor.userData.ring.material.color.setHex(0x00ff00);
+                handCursor.scale.set(1.2, 1.2, 1.2);
+                
+                if (creative) {
+                   if (gesture === 'scale') return; // Don't draw while scaling
+                   
+                   if (grabbedObject) {
+                       // MOVE Logic: Snap to grid
+                       grabbedObject.position.copy(handCursor.position).divideScalar(0.5).floor().multiplyScalar(0.5).addScalar(0.25);
+                   } else if (tool === "brush" && brushActive) {
+                       brushAtPointer();
+                   } else {
+                       // Drag-to-Spawn
+                       const dist = lastPlacementPos.distanceTo(handCursor.position);
+                       if (dist >= 0.45) {
+                           placeAtPointer();
+                           lastPlacementPos.copy(handCursor.position);
+                       }
+                   }
+                }
+            } else {
+                lastPlacementPos.set(Infinity, Infinity, Infinity);
+                if (pointerRef && pointerRef.current) pointerRef.current.style.borderColor = 'yellow';
+                handCursor.material.color.setHex(0xffff00);
+                if (handCursor.userData.ring) handCursor.userData.ring.material.color.setHex(0xffff00);
+                handCursor.scale.set(1.0, 1.0, 1.0);
+            }
+
         } else {
-          setDebugInfo("Hands detected: 0");
-          handCursor.visible = false;
-          if (pointerRef && pointerRef.current) pointerRef.current.style.display = 'none';
+            setDebugInfo("Hands: 0");
+            handCursor.visible = false;
+            if (pointerRef && pointerRef.current) pointerRef.current.style.display = 'none';
         }
       });
-
-      isWebcamActive = true;
-      async function loop() {
-        if (!isWebcamActive) return;
-        if (videoRef.current && videoRef.current.readyState >= 2) {
-          await handsInstance.send({ image: videoRef.current });
-        }
-        handsLoopId = requestAnimationFrame(loop);
-      }
-      loop();
+      
+      await handController.initialize();
+      
     } catch (e) {
       console.error("Webcam init failed", e);
       setDebugInfo(`Error: ${e.message}`);
@@ -682,32 +943,235 @@ export async function renderHologram({ image, modelUrl, overlayUrl, persona, onE
   }
 
   function stopWebcam() {
-    isWebcamActive = false;
-    if (handsLoopId) cancelAnimationFrame(handsLoopId);
-    if (videoStream) {
-      videoStream.getTracks().forEach(track => track.stop());
-      videoStream = null;
-    }
-    if (videoRef.current) {
-        videoRef.current.style.display = 'none';
-        scene.background = new THREE.Color(0x000000); // Restore black background
-    }
-    if (handsInstance) {
-      handsInstance.close();
-      handsInstance = null;
-    }
+     if (handController) {
+         handController.stop();
+         handController = null;
+     }
+     isWebcamActive = false;
+     if (videoRef.current) {
+         videoRef.current.style.display = 'none';
+         scene.background = new THREE.Color(0x050510);
+     }
+  }
+
+  const clock = new THREE.Clock();
+
+  // Mood State for Smooth Transitions (LERP)
+  const currentMoodWeights = { scolding: 0, shy: 0, possessive: 0, surprised: 0, caring: 0 };
+  const targetMoodWeights = { scolding: 0, shy: 0, possessive: 0, surprised: 0, caring: 0 };
+  let lastMoodUpdate = Date.now();
+  let currentMood = "neutral"; 
+  let isSpeaking = false;
+
+  // Texture Overlay Helper
+  function updateTextureOverlay(mesh, mood, blushIntensity = 0.4) {
+      if (!mesh.userData.originalTexture) {
+           // Cache original texture image
+           mesh.userData.originalTexture = mesh.material.uniforms.uTexture.value.image;
+      }
+      const img = mesh.userData.originalTexture;
+      if (!img) return;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+
+      // Add Mood Overlays
+      if (mood === "scolding" || mood === "strict") {
+           // Angry Vein
+           ctx.font = `${canvas.width * 0.15}px serif`;
+           ctx.fillText("💢", canvas.width * 0.7, canvas.height * 0.3);
+      } else if (mood === "caring" || mood === "shy" || mood === "tsundere") {
+           // Soft Blush (Pink Ovals) - Dynamic Intensity
+           ctx.globalAlpha = blushIntensity;
+           ctx.fillStyle = "#ff69b4";
+           
+           if (mood === "tsundere" && blushIntensity > 0.6) {
+               ctx.fillStyle = "#ff0055"; // Deep red for high intensity
+           }
+
+           ctx.beginPath();
+           ctx.ellipse(canvas.width * 0.3, canvas.height * 0.55, canvas.width*0.1, canvas.height*0.06, 0, 0, Math.PI*2);
+           ctx.fill();
+           ctx.beginPath();
+           ctx.ellipse(canvas.width * 0.7, canvas.height * 0.55, canvas.width*0.1, canvas.height*0.06, 0, 0, Math.PI*2);
+           ctx.fill();
+           
+           if (mood === "tsundere" && blushIntensity > 0.7) {
+                // Steam Effect
+                ctx.globalAlpha = 1.0;
+                ctx.font = `${canvas.width * 0.15}px serif`;
+                ctx.fillText("💨", canvas.width * 0.8, canvas.height * 0.2);
+           }
+           
+           ctx.globalAlpha = 1.0;
+      }
+
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.flipY = false; 
+      mesh.material.uniforms.uTexture.value = tex;
+  }
+
+  function updateModelTexture(base64Image) {
+      if (!model) return;
+      const img = new Image();
+      img.onload = () => {
+          const tex = new THREE.Texture(img);
+          tex.colorSpace = THREE.SRGBColorSpace;
+          tex.flipY = false;
+          tex.needsUpdate = true;
+          
+          model.traverse(child => {
+              if (child.isMesh && child.material.uniforms && child.material.uniforms.uTexture) {
+                  child.material.uniforms.uTexture.value = tex;
+                  child.userData.originalTexture = img; // Update original for overlays
+              }
+          });
+      };
+      img.src = base64Image;
   }
 
   function animate() {
     const { creative } = stateRef?.current || {};
+    
+    const t = clock.getElapsedTime();
+
+    // 1. Mood Decay Logic (Visual)
+    if (Date.now() - lastMoodUpdate > 8000) {
+        Object.keys(targetMoodWeights).forEach(k => targetMoodWeights[k] = 0);
+        // currentMood remains for texture, but weights drop
+    }
+
+    // 2. LERP Weights
+    Object.keys(currentMoodWeights).forEach(k => {
+        const diff = targetMoodWeights[k] - currentMoodWeights[k];
+        currentMoodWeights[k] += diff * 0.05; 
+    });
+
+    scene.traverse((child) => {
+      if (child.isMesh && child.material.uniforms && child.material.uniforms.uTime) {
+         child.material.uniforms.uTime.value = t;
+      }
+    });
+
     if (controls) {
         controls.autoRotate = !creative;
         controls.update();
     }
 
+    // Audio-Reactive Micro-Expressions
+    let jitterX = 0;
+    let jitterY = 0;
+    let jitterZ = 0;
+    
+    jitterY += Math.sin(t * 1.5) * 0.005; 
+    
+    if (isSpeaking) {
+       jitterX += (Math.random() - 0.5) * 0.02;
+       jitterY += (Math.random() - 0.5) * 0.02;
+       jitterZ += (Math.random() - 0.5) * 0.01;
+    }
+
     if (model) {
       model.rotation.y += 0.002;
-      model.position.y = Math.sin(Date.now() * 0.002) * 0.04;
+      model.position.y = Math.sin(Date.now() * 0.002) * 0.04 + jitterY;
+      model.rotation.x = jitterX;
+      model.rotation.z = jitterZ;
+
+      // Face Warping & Lip Sync
+      model.traverse((child) => {
+        if (child.isMesh && child.userData.originalPosition) {
+             const pos = child.geometry.attributes.position;
+             const original = child.userData.originalPosition;
+             const mouth = child.userData.mouthIndices || [];
+             const brow = child.userData.browIndices || [];
+             
+             // Reset to original
+             for(let i=0; i<pos.count; i++) {
+                 pos.setX(i, original.getX(i));
+                 pos.setY(i, original.getY(i));
+                 pos.setZ(i, original.getZ(i));
+             }
+             
+             // --- APPLY WEIGHTED WARPS ---
+             
+             // 1. Scolding
+             const wScold = currentMoodWeights.scolding;
+             if (wScold > 0.01) {
+                 brow.forEach(idx => {
+                     pos.setY(idx, original.getY(idx) - 0.02 * wScold); 
+                     pos.setZ(idx, original.getZ(idx) + 0.01 * wScold); 
+                 });
+             }
+
+             // 2. Possessive
+             const wPossess = currentMoodWeights.possessive;
+             if (wPossess > 0.01) {
+                 for(let i=0; i<pos.count; i++) {
+                     const z = original.getZ(i);
+                     pos.setZ(i, z + (z * 0.3 * wPossess));
+                 }
+             }
+
+             // 3. Shy / Tsundere
+             const wShy = currentMoodWeights.shy;
+             if (wShy > 0.01) {
+                 const theta = -0.15 * wShy;
+                 const cos = Math.cos(theta);
+                 const sin = Math.sin(theta);
+                 for(let i=0; i<pos.count; i++) {
+                     const y = original.getY(i);
+                     if (y > -0.1) {
+                         const weight = Math.min(1.0, (y + 0.1) * 2.0);
+                         const x = original.getX(i);
+                         const nx = x * cos - y * sin;
+                         const ny = x * sin + y * cos;
+                         pos.setX(i, x * (1-weight) + nx * weight);
+                         pos.setY(i, y * (1-weight) + ny * weight);
+                     }
+                 }
+             }
+
+             // 4. Surprised
+             const wSurprise = currentMoodWeights.surprised;
+             if (wSurprise > 0.01) {
+                 const eyeL = { x: -0.15, y: 0.15 };
+                 const eyeR = { x: 0.15, y: 0.15 };
+                 const radius = 0.12;
+                 for(let i=0; i<pos.count; i++) {
+                     const x = original.getX(i);
+                     const y = original.getY(i);
+                     const dxL = x - eyeL.x; const dyL = y - eyeL.y;
+                     const distL = Math.sqrt(dxL*dxL + dyL*dyL);
+                     const dxR = x - eyeR.x; const dyR = y - eyeR.y;
+                     const distR = Math.sqrt(dxR*dxR + dyR*dyR);
+                     
+                     if (distL < radius) {
+                         const factor = 1.0 + (radius - distL) * 0.8 * wSurprise;
+                         pos.setX(i, eyeL.x + dxL * factor);
+                         pos.setY(i, eyeL.y + dyL * factor);
+                     } else if (distR < radius) {
+                         const factor = 1.0 + (radius - distR) * 0.8 * wSurprise;
+                         pos.setX(i, eyeR.x + dxR * factor);
+                         pos.setY(i, eyeR.y + dyR * factor);
+                     }
+                 }
+             }
+             
+             // Apply Lip Sync
+             if (isSpeaking) {
+                 const amp = (Math.sin(t * 20) + 1) * 0.015; 
+                 mouth.forEach(idx => {
+                     pos.setZ(idx, pos.getZ(idx) + amp);
+                 });
+             }
+             
+             pos.needsUpdate = true;
+        }
+      });
     }
     if (model2) {
       model2.rotation.y -= 0.0018;
@@ -725,32 +1189,24 @@ export async function renderHologram({ image, modelUrl, overlayUrl, persona, onE
   };
   window.addEventListener('resize', handleResize);
 
-  const clearVoxels = () => {
-    designMeshes.forEach(v => {
-      scene.remove(v);
-      const i = objects.indexOf(v);
-      if (i > -1) objects.splice(i, 1);
-    });
-    designMeshes.length = 0;
-    // Also clear persistence for voxels
-    if (voxelDataRef) voxelDataRef.current = [];
-  };
 
-  const exportVoxels = () => {
-    if (designMeshes.length === 0) return;
-    const exporter = new OBJExporter();
-    const group = new THREE.Group();
-    designMeshes.forEach(mesh => {
-      group.add(mesh.clone());
-    });
-    const result = exporter.parse(group);
-    const blob = new Blob([result], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'holopad-design.obj';
-    link.click();
-    URL.revokeObjectURL(url);
+
+  const speak = (text) => {
+    if ('speechSynthesis' in window) {
+      // Holographic Audio Effect
+      playVoiceSkin("self"); 
+      
+      const u = new SpeechSynthesisUtterance(text);
+      const voices = window.speechSynthesis.getVoices();
+      const preferred = voices.find(v => v.name.includes("Google") && v.name.includes("Female")) || voices[0];
+      if (preferred) u.voice = preferred;
+      
+      // Pitch/Rate tweaks for "AI" feel
+      u.pitch = 1.1; 
+      u.rate = 1.05;
+      
+      window.speechSynthesis.speak(u);
+    }
   };
 
   let recognition = null;
@@ -763,31 +1219,93 @@ export async function renderHologram({ image, modelUrl, overlayUrl, persona, onE
     recognition = new SpeechRecognition();
     recognition.continuous = true;
     recognition.interimResults = false;
-    recognition.lang = 'hi-IN'; // Default to Hindi/English mix
+    recognition.lang = 'en-US';
 
     recognition.onstart = () => {
-        setDebugInfo("🎤 Listening... (Speak 'Box', 'Gola', 'Clear')");
+        setDebugInfo("🎤 Listening... Ask Meg anything!");
+        if(onVoiceStateChange) onVoiceStateChange(true);
     };
 
     recognition.onend = () => {
-        setDebugInfo("Voice Stopped (Click Mic to restart)");
+        setDebugInfo("Voice Idle (Click Mic to wake Meg)");
+        if(onVoiceStateChange) onVoiceStateChange(false);
     };
 
-    recognition.onresult = (event) => {
+    recognition.onresult = async (event) => {
       const last = event.results.length - 1;
       const transcript = event.results[last][0].transcript.toLowerCase().trim();
       setDebugInfo(`🎤 Heard: "${transcript}"`);
 
-      if (transcript.includes('box') || transcript.includes('cube') || transcript.includes('dabba')) {
-        placeAtPointer('cube');
-      } else if (transcript.includes('sphere') || transcript.includes('ball') || transcript.includes('gola')) {
-        placeAtPointer('sphere');
-      } else if (transcript.includes('pyramid') || transcript.includes('triangle')) {
-        placeAtPointer('pyramid');
-      } else if (transcript.includes('voxel') || transcript.includes('block')) {
-        placeAtPointer('voxel');
-      } else if (transcript.includes('clear') || transcript.includes('saaf') || transcript.includes('remove')) {
-        clearVoxels();
+      // 1. Semantic Intent (Llama 1B)
+      try {
+          const res = await fetch('/api/command', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ transcript })
+          });
+          const data = await res.json();
+          
+          if (data.command) {
+              const cmd = data.command.toUpperCase();
+              const obj = data.object ? data.object.toUpperCase() : "";
+              
+              setDebugInfo(`🤖 Intent: ${cmd} ${obj}`);
+
+              if (cmd === 'CREATE') {
+                  if (obj === 'CUBE') { placeAtPointer('cube'); speak("Cube created."); }
+                  else if (obj === 'SPHERE') { placeAtPointer('sphere'); speak("Sphere created."); }
+                  else if (obj === 'PYRAMID') { placeAtPointer('pyramid'); speak("Pyramid created."); }
+                  else if (obj === 'VOXEL') { placeAtPointer('voxel'); speak("Voxel placed."); }
+              } 
+              else if (cmd === 'UNDO') { undo(); speak("Undo."); }
+              else if (cmd === 'CLEAR') { clearVoxels(); speak("Cleared."); }
+              else if (cmd === 'DELETE') { 
+                  // Trigger delete mode or delete selection?
+                  // For now, just say "Use the peace sign to delete."
+                  speak("Show me a peace sign to delete objects.");
+              }
+              else if (cmd === 'TEXTURE') {
+                  const style = data.params?.style || "default";
+                  speak(`Okay, changing style to ${style}. This might take a moment.`);
+                  try {
+                      const texRes = await fetch('/api/texture', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ prompt: style })
+                      });
+                      const texData = await texRes.json();
+                      if (texData.image) {
+                          updateModelTexture(texData.image);
+                          speak("Done! How do I look?");
+                      } else {
+                          speak("I couldn't find that outfit in my closet.");
+                      }
+                  } catch (e) {
+                      console.error("Texture error:", e);
+                      speak("Something went wrong with the wardrobe.");
+                  }
+              }
+              return;
+          }
+      } catch (e) {
+          console.warn("Intent parsing failed, falling back to Chat:", e);
+      }
+
+      // 2. Fallback to Assistant Chat (Personality)
+      try {
+          // Use relative path via proxy
+          const res = await fetch('/api/chat', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ message: transcript })
+          });
+          const data = await res.json();
+          if (data.response) {
+              speak(data.response);
+              setDebugInfo(`Meg: ${data.response}`);
+          }
+      } catch (e) {
+          console.error("Chat error", e);
       }
     };
 
@@ -804,19 +1322,29 @@ export async function renderHologram({ image, modelUrl, overlayUrl, persona, onE
          const msg = errorMap[event.error] || event.error;
          console.warn("Voice warning/error:", event.error);
          
-         // Don't overwrite "Listening..." with "aborted" if we just toggled it off intentionally
          if (event.error !== 'aborted') {
              setDebugInfo(`⚠️ Voice: ${msg}`);
          }
+         if(onVoiceStateChange) onVoiceStateChange(false);
     };
 
     return recognition;
   };
 
-  // Don't start automatically, wait for user
+  // Initialize but don't start yet
   setupVoiceControl();
 
   return {
+    exportOBJ: () => {
+      const exporter = new OBJExporter();
+      // Filter: Only export designMeshes (user creations) + model (loaded hologram)
+      const exportGroup = new THREE.Group();
+      designMeshes.forEach(m => exportGroup.add(m.clone()));
+      if (model) exportGroup.add(model.clone());
+      
+      const result = exporter.parse(exportGroup);
+      return new Blob([result], { type: 'text/plain' });
+    },
     dispose: () => {
       if (recognition) {
           recognition.onend = null; // Prevent loops
@@ -843,6 +1371,7 @@ export async function renderHologram({ image, modelUrl, overlayUrl, persona, onE
             }
         }
     },
+    undo,
     clearVoxels,
     exportVoxels,
     takeScreenshot: () => {
@@ -876,6 +1405,44 @@ export async function renderHologram({ image, modelUrl, overlayUrl, persona, onE
     setWebcam: (enable) => {
       if (enable) startWebcam();
       else stopWebcam();
+    },
+    setMood: (m, blushIntensity = 0, vertexWarp = "none") => {
+        // Update mood state
+        const previousMood = currentMood;
+        currentMood = m;
+        lastMoodUpdate = Date.now();
+
+        // Reset all targets to 0
+        Object.keys(targetMoodWeights).forEach(k => targetMoodWeights[k] = 0);
+
+        // Set specific target to 1 based on mood string
+        if (m === "scolding" || m === "strict") targetMoodWeights.scolding = 1;
+        else if (m === "possessive") targetMoodWeights.possessive = 1;
+        else if (m === "shy" || m === "tsundere") targetMoodWeights.shy = 1;
+        else if (m === "surprised" || m === "scolded") targetMoodWeights.surprised = 1;
+        else if (m === "caring") targetMoodWeights.caring = 1; 
+
+        // INSTANT SNAP BACK (Tsundere Logic)
+        // If switching from Blush -> Scolding, bypass LERP for instant impact
+        if ((previousMood === "shy" || previousMood === "tsundere") && (m === "scolding" || m === "strict")) {
+             currentMoodWeights.scolding = 1;
+             currentMoodWeights.shy = 0;
+             currentMoodWeights.possessive = 0;
+             currentMoodWeights.surprised = 0;
+             currentMoodWeights.caring = 0;
+        }
+
+        // Trigger Texture Update (Blush/Veins)
+        if (model) {
+            model.traverse(child => {
+                if (child.isMesh && child.material.uniforms && child.material.uniforms.uTexture.value && child.material.uniforms.uTexture.value.image) {
+                     updateTextureOverlay(child, m, blushIntensity);
+                }
+            });
+        }
+    },
+    setSpeaking: (s) => {
+        isSpeaking = s;
     }
   };
 }

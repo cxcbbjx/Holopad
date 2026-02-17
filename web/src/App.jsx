@@ -6,11 +6,17 @@ import Landing from "./screens/Landing";
 import SecondPage from "./screens/SecondPage";
 import Upload from "./screens/Upload";
 import Viewer from "./screens/Viewer";
+import PromoVideo from "./screens/PromoVideo";
+
+import Platform from "./pages/Platform";
+import ExperimentalHome from "./pages/ExperimentalHome";
+import WebsiteHome from "./pages/WebsiteHome";
+import Features from "./pages/Features";
+import About from "./pages/About";
+import Contact from "./pages/Contact";
+import Requirements from "./pages/Requirements";
+
 import HolostagePage from "./screens/HolostagePage";
-import ArchitecturePage from "./screens/ArchitecturePage";
-import TorusKnotPage from "./screens/TorusKnotPage";
-import CityTourPage from "./screens/CityTourPage";
-import FuturePage from "./screens/FuturePage";
 
 function LandingWrapper() {
 
@@ -51,25 +57,13 @@ function LandingWrapper() {
   );
 }
 
-function UploadWrapper() {
-    const navigate = useNavigate();
-    // We might need to store state globally or pass via location state
-    // For now, let's just navigate to viewer with state
-    return (
-        <Upload
-          onSelect={(img) => {
-            navigate("/viewer", { state: { image: img } });
-          }}
-        />
-    )
-}
-
 function ViewerWrapper() {
     const location = useLocation();
     const image = location.state?.image;
+    const creative = location.state?.creative;
     
     // Handle case where accessed directly without image
-    if (!image) {
+    if (!image && !creative) {
         // In a real app, maybe redirect to upload or show default
         // For prototype, we'll let Viewer handle null or redirect
         return <Viewer image={null} />; 
@@ -82,18 +76,31 @@ export default function App() {
   useSound(); // Initialize global audio
 
   return (
-    <SmoothScroll>
-      <Routes>
-        <Route path="/" element={<LandingWrapper />} />
-        <Route path="/second" element={<SecondPage />} />
-        <Route path="/upload" element={<UploadWrapper />} />
-        <Route path="/viewer" element={<ViewerWrapper />} />
-        <Route path="/holostage" element={<HolostagePage />} />
-        <Route path="/architecture" element={<ArchitecturePage />} />
-        <Route path="/geometry/torus-knot" element={<TorusKnotPage />} />
-        <Route path="/city" element={<CityTourPage />} />
-        <Route path="/future" element={<FuturePage />} />
-      </Routes>
-    </SmoothScroll>
+    <Routes>
+      {/* Intro Experience (Default Home) */}
+      <Route path="/" element={<LandingWrapper />} />
+      <Route path="/home" element={<LandingWrapper />} />
+      <Route path="/intro" element={<LandingWrapper />} />
+
+      {/* Main Hub */}
+      <Route path="/holostage" element={<HolostagePage />} />
+      
+      {/* App Routes */}
+      <Route path="/second" element={<SecondPage />} />
+      <Route path="/upload" element={<Upload />} />
+      <Route path="/viewer" element={<ViewerWrapper />} />
+      <Route path="/promo" element={<PromoVideo />} />
+
+      {/* Legacy/Marketing Routes (Hidden/Secondary) */}
+      <Route path="/classic" element={<SmoothScroll><WebsiteHome /></SmoothScroll>} />
+      <Route path="/experimental" element={<ExperimentalHome />} />
+      <Route path="/features" element={<SmoothScroll><Features /></SmoothScroll>} />
+      <Route path="/about" element={<SmoothScroll><About /></SmoothScroll>} />
+      <Route path="/contact" element={<SmoothScroll><Contact /></SmoothScroll>} />
+      <Route path="/requirements" element={<SmoothScroll><Requirements /></SmoothScroll>} />
+      <Route path="/download" element={<SmoothScroll><Platform /></SmoothScroll>} />
+      <Route path="/platforms" element={<SmoothScroll><Platform /></SmoothScroll>} />
+      <Route path="/platform" element={<SmoothScroll><Platform /></SmoothScroll>} />
+    </Routes>
   );
 }
