@@ -17,6 +17,10 @@ app.use(cors({ origin: true }));
 app.use(express.json());
 app.use("/api", personaRoutes);
 
+app.get("/", (req, res) => {
+  res.send("Holopad backend API is running");
+});
+
 // Connect Database & Memory
 connectDB();
 initMemory();
@@ -491,6 +495,7 @@ app.post("/api/upload", upload.single("image"), async (req, res) => {
   }
 });
 
-app.listen(5000, () =>
-  console.log("🚀 Holopad server running on http://localhost:5000")
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () =>
+  console.log(`🚀 Holopad server running on http://localhost:${PORT}`)
 );
