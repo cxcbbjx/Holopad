@@ -250,9 +250,11 @@ const Overlay = () => {
       }
       
       if (j?.modelUrl) {
-        // Defensive: Clean URL to prevent double-protocol or space injection
         const cleanUrl = j.modelUrl.trim();
-        setModelUrl(cleanUrl);
+        const fullUrl = cleanUrl.startsWith("http")
+          ? cleanUrl
+          : `${API_BASE}${cleanUrl}`;
+        setModelUrl(fullUrl);
       }
     } catch (err) {
       console.error("Upload failed:", err);
@@ -287,7 +289,7 @@ const Overlay = () => {
              if (user.role !== 'developer' && priceVal > 0) {
                  setUser(u => ({ ...u, walletBalance: u.walletBalance - priceVal }));
              }
-            navigate('/viewer', { state: { modelUrl: item.url, persona: item.name.includes("Meg") ? 'tsundere' : 'default' } });
+            navigate('/viewer', { state: { modelUrl: `${API_BASE}${item.url}`, persona: item.name.includes("Meg") ? 'tsundere' : 'default' } });
         } else {
             alert(d.error);
         }

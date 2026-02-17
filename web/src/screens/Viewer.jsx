@@ -40,7 +40,11 @@ export default function Viewer() {
                 const data = await res.json();
                 
                 if (data.modelUrl) {
-                    setActiveModelUrl(data.modelUrl);
+                    const cleanUrl = data.modelUrl.trim();
+                    const fullUrl = cleanUrl.startsWith("http")
+                      ? cleanUrl
+                      : `${API_BASE}${cleanUrl}`;
+                    setActiveModelUrl(fullUrl);
                 }
             } catch(e) {
                 console.error("Auto-upload failed:", e);
