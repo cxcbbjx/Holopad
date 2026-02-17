@@ -3,9 +3,11 @@ const fs = require('fs');
 const FormData = require('form-data');
 const path = require('path');
 
+const SAM_BASE = process.env.SAM_BASE_URL || 'http://localhost:8001';
+
 async function getSegmentation(imagePath) {
   try {
-    const url = 'http://localhost:8001/segment';
+    const url = `${SAM_BASE}/segment`;
     const formData = new FormData();
     formData.append('image', fs.createReadStream(imagePath));
 
@@ -26,7 +28,7 @@ async function getSegmentation(imagePath) {
 
 async function getDepthHologram(imagePath) {
     try {
-        const url = 'http://localhost:8001/to-hologram-depth';
+        const url = `${SAM_BASE}/to-hologram-depth`;
         const formData = new FormData();
         formData.append('image', fs.createReadStream(imagePath));
 
@@ -46,4 +48,26 @@ async function getDepthHologram(imagePath) {
     }
 }
 
-module.exports = { getSegmentation, getDepthHologram };
+async function getExtrudedGLB(imagePath) {
+    try {
+        const url = `${SAM_BASE}/to-glb`;
+        const formData = new FormData();
+        formData.append('image', fs.createReadStream(imagePath));
+
+        const res = await axios.post(url, formData, {
+            headers: {
+                ...formData.getHeaders()
+            },
+            maxBodyLength: Infinity,
+            maxContentLength: Infinity,
+            validateStatus: (status) => status < 500
+        });
+
+        return res.data;
+    } catch (e) {
+        console.error("Extrusion Gen Error:", e.message);
+        return null;
+    }
+}
+
+module.exports = { getSegmentation, getDepthHologram, getExtrudedGLB };
