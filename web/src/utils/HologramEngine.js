@@ -1232,13 +1232,14 @@ export async function renderHologram({ image, modelUrl, overlayUrl, persona, onE
     };
 
     recognition.onresult = async (event) => {
+      const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
       const last = event.results.length - 1;
       const transcript = event.results[last][0].transcript.toLowerCase().trim();
       setDebugInfo(`🎤 Heard: "${transcript}"`);
 
       // 1. Semantic Intent (Llama 1B)
       try {
-          const res = await fetch('/api/command', {
+          const res = await fetch(`${API_BASE}/api/command`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ transcript })
@@ -1268,7 +1269,7 @@ export async function renderHologram({ image, modelUrl, overlayUrl, persona, onE
                   const style = data.params?.style || "default";
                   speak(`Okay, changing style to ${style}. This might take a moment.`);
                   try {
-                      const texRes = await fetch('/api/texture', {
+                      const texRes = await fetch(`${API_BASE}/api/texture`, {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({ prompt: style })
@@ -1293,8 +1294,7 @@ export async function renderHologram({ image, modelUrl, overlayUrl, persona, onE
 
       // 2. Fallback to Assistant Chat (Personality)
       try {
-          // Use relative path via proxy
-          const res = await fetch('/api/chat', {
+          const res = await fetch(`${API_BASE}/api/chat`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ message: transcript })

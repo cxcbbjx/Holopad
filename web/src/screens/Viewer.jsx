@@ -5,6 +5,8 @@ import { useSound } from "../utils/SoundManager";
 import { renderHologram } from "../utils/HologramEngine";
 import { CONFIG } from "../config";
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
+
 export default function Viewer() {
   const mountRef = useRef(null);
   const location = useLocation();
@@ -34,7 +36,7 @@ export default function Viewer() {
                 // Optional: add metadata
                 fd.append("author", "ViewerUser"); 
                 
-                const res = await fetch("/api/upload", { method: "POST", body: fd });
+                const res = await fetch(`${API_BASE}/api/upload`, { method: "POST", body: fd });
                 const data = await res.json();
                 
                 if (data.modelUrl) {
@@ -81,7 +83,7 @@ export default function Viewer() {
     const initUser = async () => {
         try {
             const deviceId = localStorage.getItem('holo_device_id') || 'unknown';
-            const res = await fetch("/api/user/init", {
+            const res = await fetch(`${API_BASE}/api/user/init`, {
                 method: "POST",
                 headers: { 
                     "x-device-id": deviceId,
@@ -102,7 +104,7 @@ export default function Viewer() {
       // 1. Check/Deduct Tokens
       try {
           const deviceId = localStorage.getItem('holo_device_id');
-          const res = await fetch("/api/actions/save", {
+          const res = await fetch(`${API_BASE}/api/actions/save`, {
               method: "POST",
               headers: { "x-device-id": deviceId, "x-role": user?.role }
           });
@@ -151,7 +153,7 @@ export default function Viewer() {
           fd.append("price", price);
           
           const deviceId = localStorage.getItem('holo_device_id');
-          const res = await fetch("/api/market/list", {
+          const res = await fetch(`${API_BASE}/api/market/list`, {
               method: "POST",
               headers: { "x-device-id": deviceId, "x-role": user?.role },
               body: fd
@@ -267,7 +269,7 @@ export default function Viewer() {
        // Trigger greeting on load
        // Small delay to ensure model is visible
        setTimeout(() => {
-         fetch('/api/chat', {
+         fetch(`${API_BASE}/api/chat`, {
            method: 'POST',
            headers: { 'Content-Type': 'application/json' },
            body: JSON.stringify({ message: "MEET_MEG_INIT", persona: 'tsundere' })
@@ -299,7 +301,7 @@ export default function Viewer() {
          if (idleTime > 14400000) { 
              try {
                  console.log("[Meg] User is idle. Poking...");
-                 const res = await fetch('/api/proactive');
+                 const res = await fetch(`${API_BASE}/api/proactive`);
                  const data = await res.json();
                  if (data.response) {
                      speak(data.response);
@@ -343,7 +345,7 @@ export default function Viewer() {
         setMeetingStatus(action === 'join' ? 'active' : 'idle');
       }
 
-      const res = await fetch('http://localhost:5000/api/action', {
+      const res = await fetch(`${API_BASE}/api/action`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type, action })
@@ -371,7 +373,7 @@ export default function Viewer() {
     setInputMsg("");
 
     try {
-      const res = await fetch('/api/chat', {
+      const res = await fetch(`${API_BASE}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: txt, persona: persona || "Assistant" })
@@ -458,7 +460,7 @@ export default function Viewer() {
 
       try {
           const deviceId = localStorage.getItem('holo_device_id');
-          const res = await fetch("/api/tokens/buy", {
+          const res = await fetch(`${API_BASE}/api/tokens/buy`, {
               method: "POST",
               headers: { "Content-Type": "application/json", "x-device-id": deviceId },
               body: JSON.stringify({ amount, tokens })

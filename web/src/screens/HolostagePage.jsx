@@ -10,6 +10,8 @@ import '../styles/theme.css';
 import { useNavigate } from 'react-router-dom';
 import { CONFIG } from '../config';
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
+
 
 // --- Shaders ---
 
@@ -149,7 +151,7 @@ const Overlay = ({ onStart, onTryCreative }) => {
                 const deviceId = localStorage.getItem('holo_device_id') || `dev_${Math.random().toString(36).slice(2)}`;
                 localStorage.setItem('holo_device_id', deviceId);
                 
-                const res = await fetch("/api/user/init", {
+                const res = await fetch(`${API_BASE}/api/user/init`, {
                     method: "POST",
                     headers: { 
                         "x-device-id": deviceId,
@@ -205,7 +207,7 @@ const Overlay = ({ onStart, onTryCreative }) => {
         
         try {
           const deviceId = localStorage.getItem('holo_device_id');
-          const res = await fetch("/api/tokens/buy", {
+          const res = await fetch(`${API_BASE}/api/tokens/buy`, {
               method: "POST",
               headers: { "Content-Type": "application/json", "x-device-id": deviceId },
               body: JSON.stringify({ amount, tokens })
@@ -225,7 +227,7 @@ const Overlay = ({ onStart, onTryCreative }) => {
         setViewMode('buy');
         setMarketLoading(true);
         try {
-            const res = await fetch("/api/market");
+            const res = await fetch(`${API_BASE}/api/market`);
             const data = await res.json();
             setMarketItems(data);
         } catch (e) {

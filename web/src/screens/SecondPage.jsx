@@ -7,8 +7,10 @@ import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useNavigate } from "react-router-dom";
 import { useSound, soundManager } from "../utils/SoundManager";
-import { CONFIG } from "../config";
+import { CONFIG } from '../config';
 import "../styles/theme.css";
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 
 const vertexShader = `
 varying vec2 vUv;
@@ -119,7 +121,7 @@ const Overlay = () => {
         const deviceId = localStorage.getItem('holo_device_id') || `dev_${Math.random().toString(36).slice(2)}`;
         localStorage.setItem('holo_device_id', deviceId);
         
-        const res = await fetch("/api/user/init", {
+        const res = await fetch(`${API_BASE}/api/user/init`, {
             method: "POST",
             headers: { 
                 "x-device-id": deviceId,
@@ -169,7 +171,7 @@ const Overlay = () => {
       
       try {
         const deviceId = localStorage.getItem('holo_device_id');
-        const res = await fetch("/api/tokens/buy", {
+        const res = await fetch(`${API_BASE}/api/tokens/buy`, {
             method: "POST",
             headers: { "Content-Type": "application/json", "x-device-id": deviceId },
             body: JSON.stringify({ amount, tokens })
@@ -197,7 +199,7 @@ const Overlay = () => {
     setViewMode('buy');
     setMarketLoading(true);
     try {
-        const res = await fetch("/api/market");
+        const res = await fetch(`${API_BASE}/api/market`);
         const data = await res.json();
         setMarketItems(data);
     } catch (e) {
@@ -217,7 +219,7 @@ const Overlay = () => {
     fd.append("author", "Me"); // Mock user
     
     try {
-        const r = await fetch("/api/upload", { method: "POST", body: fd });
+        const r = await fetch(`${API_BASE}/api/upload`, { method: "POST", body: fd });
         if (!r.ok) throw new Error("Upload failed");
         alert("Listed successfully!");
         setSellForm({ name: '', price: '', file: null });
@@ -236,7 +238,7 @@ const Overlay = () => {
       const fd = new FormData();
       fd.append("image", f);
       // Use relative path via proxy
-      const r = await fetch("/api/upload", { method: "POST", body: fd });
+      const r = await fetch(`${API_BASE}/api/upload`, { method: "POST", body: fd });
       
       if (!r.ok) {
         throw new Error(`Server error: ${r.status}`);
@@ -274,7 +276,7 @@ const Overlay = () => {
     
     try {
         const deviceId = localStorage.getItem('holo_device_id');
-        const res = await fetch("/api/market/buy", {
+        const res = await fetch(`${API_BASE}/api/market/buy`, {
             method: "POST",
             headers: { "Content-Type": "application/json", "x-device-id": deviceId },
             body: JSON.stringify({ itemId: item.id, price: item.price })
