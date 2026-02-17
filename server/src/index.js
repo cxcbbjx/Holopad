@@ -358,6 +358,7 @@ app.post("/api/upload", upload.single("image"), async (req, res) => {
     }
 
     let overlayInputPath = null;
+    let overlayBufPath = null;
     let seg = null;
     try {
         seg = await getSegmentation(imagePath);
@@ -391,15 +392,13 @@ app.post("/api/upload", upload.single("image"), async (req, res) => {
         const meg = await generateFromImage(overlayInputPath || imagePath, { size: 1024, harmonics: 12 });
         const eqPath = saveEquationsJSON(meg.equations, publicDir, baseName);
 
-        const overlayBufPath = path.join(publicDir, `${baseName}_overlay.png`);
+        overlayBufPath = path.join(publicDir, `${baseName}_overlay.png`);
         fs.writeFileSync(overlayBufPath, meg.overlayBuffer);
     } catch (err) {
         console.error("Meg Generation Failed:", err);
-        // Log failure to MongoDB for training
         logEntry.status = 'failed';
         logEntry.error = err.message;
         await logEntry.save();
-        // Continue to fallback if possible, or rethrow
     }
 
     const outGlb = path.join(publicDir, `${baseName}.glb`);
