@@ -126,13 +126,16 @@ app.post("/api/market/buy", attachUser, async (req, res) => {
     res.json({ success: true, message: "Purchase Successful" });
 });
 
-// Start Python SAM Service
-const pythonProcess = spawn('python', ['-m', 'uvicorn', 'python.sam_service:app', '--port', '8001'], {
-  cwd: path.join(__dirname, '..'),
-  shell: true
-});
-pythonProcess.stdout.on('data', (d) => console.log(`[SAM]: ${d}`));
-pythonProcess.stderr.on('data', (d) => console.error(`[SAM ERR]: ${d}`));
+// Start Python SAM Service locally (dev only)
+// In production (Render), use SAM_BASE_URL to point to a separate Python service.
+if (process.env.NODE_ENV !== 'production') {
+  const pythonProcess = spawn('python', ['-m', 'uvicorn', 'python.sam_service:app', '--port', '8001'], {
+    cwd: path.join(__dirname, '..'),
+    shell: true
+  });
+  pythonProcess.stdout.on('data', (d) => console.log(`[SAM]: ${d}`));
+  pythonProcess.stderr.on('data', (d) => console.error(`[SAM ERR]: ${d}`));
+}
 
 const UPLOAD_DIR = path.join(__dirname, "../uploads");
 if (!fs.existsSync(UPLOAD_DIR)) {
