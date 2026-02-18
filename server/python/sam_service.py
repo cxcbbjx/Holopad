@@ -3,9 +3,27 @@ import os
 from typing import Optional
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image, ImageFilter, ImageOps
 
 app = FastAPI()
+
+# Global output directory for generated assets
+BASE_DIR = os.path.dirname(__file__)
+DEFAULT_OUT_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "src", "public"))
+OUT_DIR = os.environ.get("SAM_OUT", DEFAULT_OUT_DIR)
+os.makedirs(OUT_DIR, exist_ok=True)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.mount("/public", StaticFiles(directory=OUT_DIR), name="public")
 
 sam_model = None
 depth_pipe = None
@@ -78,12 +96,11 @@ async def segment(image: UploadFile = File(...)):
             mask = None
     if mask is None:
         mask = simple_mask(img)
-    out_dir = os.environ.get("SAM_OUT", os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src", "public")))
-    os.makedirs(out_dir, exist_ok=True)
+    out_dir = OUT_DIR
     base = f"sam_mask_{str(abs(hash(content)))[:10]}.png"
     out_path = os.path.join(out_dir, base)
     mask.save(out_path)
-    return JSONResponse({"maskUrl": f"http://localhost:5000/public/{base}"})
+    return JSONResponse({"maskUrl": f"/public/{base}"})
 
 @app.post("/analyze_view")
 async def analyze_view(image: UploadFile = File(...)):
@@ -194,15 +211,14 @@ async def to_glb(image: UploadFile = File(...)):
     mesh.visual = trimesh.visual.TextureVisuals(uv=uvs, image=img)
     
     # 4. Export
-    out_dir = os.environ.get("SAM_OUT", os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src", "public")))
-    os.makedirs(out_dir, exist_ok=True)
+    out_dir = OUT_DIR
     base = f"holo_{str(abs(hash(content)))[:10]}.glb"
     out_path = os.path.join(out_dir, base)
     
     mesh.export(out_path)
     
     return JSONResponse({
-        "modelUrl": f"http://localhost:5000/public/{base}",
+        "modelUrl": f"/public/{base}",
         "maskUrl": "generated_internally"
     })
 
@@ -447,15 +463,13 @@ async def to_hologram_depth(image: UploadFile = File(...)):
         print(f"Centering failed: {e}")
 
     # 5. Export
-    out_dir = os.environ.get("SAM_OUT", os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src", "public")))
-    os.makedirs(out_dir, exist_ok=True)
+    out_dir = OUT_DIR
     base = f"holo_depth_{str(abs(hash(content)))[:10]}.glb"
     out_path = os.path.join(out_dir, base)
     
     mesh.export(out_path)
     
     return JSONResponse({
-        "modelUrl": f"http://localhost:5000/public/{base}",
+        "modelUrl": f"/public/{base}",
         "type": "depth_mesh"
     })
-

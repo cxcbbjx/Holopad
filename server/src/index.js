@@ -427,8 +427,14 @@ app.post("/api/upload", upload.single("image"), async (req, res) => {
       
       if (depthGlb && depthGlb.modelUrl) {
          console.log("Depth Hologram Success");
-         const u = new URL(depthGlb.modelUrl);
-         finalModelUrl = u.pathname;
+         const clean = depthGlb.modelUrl.trim();
+         const isAbsolute = /^https?:\/\//i.test(clean);
+         if (isAbsolute) {
+            finalModelUrl = clean;
+         } else {
+            const samBase = (process.env.SAM_BASE_URL || "").replace(/\/$/, "");
+            finalModelUrl = samBase ? `${samBase}${clean}` : clean;
+         }
          useLocalGen = false;
          depthSuccess = true;
          
@@ -436,7 +442,7 @@ app.post("/api/upload", upload.single("image"), async (req, res) => {
          logEntry.status = 'success';
          await logEntry.save();
 
-         generatedGlbPath = path.join(publicDir, path.basename(u.pathname));
+         generatedGlbPath = null; // remote asset (served by SAM service)
       }
     } catch (err) {
       console.warn("Depth Hologram failed/skipped:", err.message);
@@ -454,10 +460,16 @@ app.post("/api/upload", upload.single("image"), async (req, res) => {
           const exactGlb = await getExtrudedGLB(imagePath);
           if (exactGlb && exactGlb.modelUrl) {
             console.log("Extrusion Success");
-            const u = new URL(exactGlb.modelUrl);
-            finalModelUrl = u.pathname; 
+            const clean = exactGlb.modelUrl.trim();
+            const isAbsolute = /^https?:\/\//i.test(clean);
+            if (isAbsolute) {
+                finalModelUrl = clean;
+            } else {
+                const samBase = (process.env.SAM_BASE_URL || "").replace(/\/$/, "");
+                finalModelUrl = samBase ? `${samBase}${clean}` : clean;
+            }
             useLocalGen = false;
-            generatedGlbPath = path.join(publicDir, path.basename(u.pathname));
+            generatedGlbPath = null;
             
             // Mark as fallback success
             if (logEntry) {
