@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+pillow
+numpy
+opencv-python-headless
+trimesh
+transformers
+torch
+segment-anything
