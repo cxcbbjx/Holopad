@@ -368,7 +368,12 @@ app.post("/api/upload", upload.single("image"), async (req, res) => {
         if (seg && seg.maskUrl) {
             const url = new URL(seg.maskUrl);
             const filename = path.basename(url.pathname);
-            overlayInputPath = path.join(publicDir, filename);
+            const candidatePath = path.join(publicDir, filename);
+            if (fs.existsSync(candidatePath)) {
+                overlayInputPath = candidatePath;
+            } else {
+                console.warn("Segmentation mask not found on this server, skipping overlay:", candidatePath);
+            }
         }
     } catch (e) {
         console.warn("Segmentation failed, proceeding without mask");
