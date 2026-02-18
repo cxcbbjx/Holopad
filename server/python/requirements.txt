@@ -7,3 +7,4 @@ trimesh
 transformers
 torch
 segment-anything
+python-multipart
