@@ -488,15 +488,6 @@ app.post("/api/upload", upload.single("image"), async (req, res) => {
         }
     }
 
-    // COMPRESSION STEP
-    if (generatedGlbPath && fs.existsSync(generatedGlbPath)) {
-        const compressedPath = generatedGlbPath.replace(".glb", "_draco.glb");
-        const success = await compressGLB(generatedGlbPath, compressedPath);
-        if (success) {
-            finalModelUrl = finalModelUrl.replace(".glb", "_draco.glb");
-        }
-    }
-
     return res.json({
       status: "ok",
       modelUrl: finalModelUrl,
