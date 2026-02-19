@@ -1,4 +1,4 @@
-# Holopad (Prototype v0.1)
+# Holopad (Prototype v1.0)
 
 Holopad is an early-stage spatial computing interface exploring mathematical models, real-time graphics, and human-computer interaction. It bridges the gap between 2D imagery and 3D spatial environments.
 
@@ -23,3 +23,4 @@ The goal is to move interaction away from flat screens and into physical space, 
 
 ## Author
 Shivang — Founder, Holopad
+
