@@ -455,7 +455,6 @@ app.post("/api/upload", upload.single("image"), async (req, res) => {
 
     if (!depthSuccess) {
         try {
-          // Fallback to Extrusion
           console.log("Attempting Exact Extrusion...");
           const exactGlb = await getExtrudedGLB(imagePath);
           if (exactGlb && exactGlb.modelUrl) {
@@ -471,26 +470,22 @@ app.post("/api/upload", upload.single("image"), async (req, res) => {
             useLocalGen = false;
             generatedGlbPath = null;
             
-            // Mark as fallback success
             if (logEntry) {
-                logEntry.status = 'fallback'; // Successful fallback
+                logEntry.status = 'fallback';
                 await logEntry.save();
             }
+          } else {
+            throw new Error("Extrusion did not return modelUrl");
           }
         } catch (err) {
-          console.warn("[METRIC] Fallback Triggered: Extrusion -> Card (Reason: Service Failure)", err.message);
+          console.warn("[METRIC] Depth and Extrusion failed:", err.message);
           if (logEntry) {
-              logEntry.status = 'failed'; // Both failed
-              logEntry.error = (logEntry.error || "") + ` | Extrusion failed: ${err.message}`;
+              logEntry.status = 'failed';
+              logEntry.error = (logEntry.error || "") + ` | Depth/Extrusion failed: ${err.message}`;
               await logEntry.save();
           }
+          return res.status(500).json({ error: "All hologram services failed" });
         }
-    }
-
-    if (useLocalGen) {
-      console.log("Using local card generator");
-      await createPlaneGLB(imagePath, outGlb, overlayBufPath, { fit: 'contain', applyEffects: true });
-      generatedGlbPath = outGlb;
     }
 
     // COMPRESSION STEP

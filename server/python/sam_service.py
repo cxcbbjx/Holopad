@@ -309,18 +309,7 @@ async def to_hologram_depth(image: UploadFile = File(...)):
     # Apply Mask
     depth_array = depth_array * mask_array
 
-    # OPTIMIZATION 3: Pipeline "Self-Correction" Logic
-    # Check Depth Variance
     variance = np.var(depth_array)
-    # Threshold: If variance is extremely low, it's likely a flat image (text, UI, etc.)
-    # or the model failed to find depth.
-    if variance < 0.005: 
-        print(f"Depth variance {variance:.4f} too low, signaling extrusion fallback")
-        return JSONResponse({
-            "hologram_type": "extrusion",
-            "variance": float(variance),
-            "message": "Low depth variance, switch to extrusion"
-        })
 
     # 3. Create Grid Mesh
     rows, cols = target_size
@@ -341,10 +330,13 @@ async def to_hologram_depth(image: UploadFile = File(...)):
     scale_h = 1.0
     
     # OPTIMIZATION 1: Holographic Swing
-    # FIX 1: Dynamic Depth Scaling (The "Swing")
-    # User feedback: "20-30% swing usually looks the most natural."
-    # Adjusted from 0.60 to 0.30 (30% of width).
-    scale_depth = scale_w * 0.30 
+    # Depth scaling factor (how much the mesh "sticks out").
+    # Can be tuned via DEPTH_SCALE env var, defaults to a stronger 0.6 for more 3D pop.
+    try:
+        depth_scale_factor = float(os.environ.get("DEPTH_SCALE", "0.6"))
+    except Exception:
+        depth_scale_factor = 0.6
+    scale_depth = scale_w * depth_scale_factor 
     
     # XX, YY are 0..1. Map to centered aspect ratio.
     vx = (xx - 0.5) * scale_w
