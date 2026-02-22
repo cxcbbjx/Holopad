@@ -11,6 +11,7 @@ const personaRoutes = require("./persona");
 const { connectDB, ImageLog, User, Transaction, isConnected } = require("./db");
 const { initMemory } = require("./memory");
 const { spawn } = require("child_process");
+const axios = require("axios");
 
 const app = express();
 app.use(cors({ origin: true }));
@@ -429,20 +430,29 @@ app.post("/api/upload", upload.single("image"), async (req, res) => {
          console.log("Depth Hologram Success");
          const clean = depthGlb.modelUrl.trim();
          const isAbsolute = /^https?:\/\//i.test(clean);
-         if (isAbsolute) {
-            finalModelUrl = clean;
-         } else {
+         let remoteUrl = clean;
+         if (!isAbsolute) {
             const samBase = (process.env.SAM_BASE_URL || "").replace(/\/$/, "");
-            finalModelUrl = samBase ? `${samBase}${clean}` : clean;
+            remoteUrl = samBase ? `${samBase}${clean}` : clean;
          }
-         useLocalGen = false;
-         depthSuccess = true;
-         
-         // Mark success in DB
-         logEntry.status = 'success';
-         await logEntry.save();
 
-         generatedGlbPath = null; // remote asset (served by SAM service)
+         const remotePathname = new URL(remoteUrl).pathname;
+         const localName = path.basename(remotePathname);
+         const localPath = path.join(publicDir, localName);
+
+         try {
+            const dl = await axios.get(remoteUrl, { responseType: "arraybuffer" });
+            fs.writeFileSync(localPath, dl.data);
+            finalModelUrl = `/public/${localName}`;
+            generatedGlbPath = localPath;
+            useLocalGen = false;
+            depthSuccess = true;
+            
+            logEntry.status = 'success';
+            await logEntry.save();
+         } catch (e) {
+            console.warn("Depth GLB download failed, skipping depth:", e.message);
+         }
       }
     } catch (err) {
       console.warn("Depth Hologram failed/skipped:", err.message);
@@ -461,18 +471,30 @@ app.post("/api/upload", upload.single("image"), async (req, res) => {
             console.log("Extrusion Success");
             const clean = exactGlb.modelUrl.trim();
             const isAbsolute = /^https?:\/\//i.test(clean);
-            if (isAbsolute) {
-                finalModelUrl = clean;
-            } else {
+            let remoteUrl = clean;
+            if (!isAbsolute) {
                 const samBase = (process.env.SAM_BASE_URL || "").replace(/\/$/, "");
-                finalModelUrl = samBase ? `${samBase}${clean}` : clean;
+                remoteUrl = samBase ? `${samBase}${clean}` : clean;
             }
-            useLocalGen = false;
-            generatedGlbPath = null;
-            
-            if (logEntry) {
-                logEntry.status = 'fallback';
-                await logEntry.save();
+
+            const remotePathname = new URL(remoteUrl).pathname;
+            const localName = path.basename(remotePathname);
+            const localPath = path.join(publicDir, localName);
+
+            try {
+                const dl = await axios.get(remoteUrl, { responseType: "arraybuffer" });
+                fs.writeFileSync(localPath, dl.data);
+                finalModelUrl = `/public/${localName}`;
+                generatedGlbPath = localPath;
+                useLocalGen = false;
+                
+                if (logEntry) {
+                    logEntry.status = 'fallback';
+                    await logEntry.save();
+                }
+            } catch (e) {
+                console.warn("Extrusion GLB download failed:", e.message);
+                throw e;
             }
           } else {
             throw new Error("Extrusion did not return modelUrl");
