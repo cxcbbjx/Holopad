@@ -4,6 +4,7 @@ import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader';
 import { OBJExporter } from 'three/examples/jsm/exporters/OBJExporter';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { HandController } from './HandController';
+import gsap from "gsap"; // Added for cinematic intro animations
 
 function playVoiceSkin(p) {
   try {
@@ -23,7 +24,7 @@ function playVoiceSkin(p) {
   } catch {}
 }
 
-export async function renderHologram({ image, modelUrl, overlayUrl, persona, onError, compareModelUrl, flipY, rot180, wow, alignX, alignY, zoom, stateRef, voxelDataRef, setDebugInfo, pointerRef, onVoiceStateChange, onStatsChange, onZoomChange }, mount) {
+export async function renderHologram({ image, modelUrl, overlayUrl, persona, onError, compareModelUrl, flipY, rot180, wow, alignX, alignY, zoom, stateRef, voxelDataRef, setDebugInfo, pointerRef, onVoiceStateChange, onStatsChange, onZoomChange, depthScale = 1.0 }, mount) {
   mount.innerHTML = "";
   // designMeshes tracks ALL user-created objects (voxels, shapes, etc.) for interaction and export
   const designMeshes = [];
@@ -37,8 +38,8 @@ export async function renderHologram({ image, modelUrl, overlayUrl, persona, onE
     0.1,
     100
   );
-  // Raised camera position for better 3D perspective (easier to see top faces)
-  camera.position.set(0, 1.5, 2.5);
+  // "Beat" Trellis 2: Cinematic 3/4 default perspective
+  camera.position.set(0.8, 1.2, 2.5);
   camera.lookAt(0, 0, 0);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
@@ -73,7 +74,8 @@ export async function renderHologram({ image, modelUrl, overlayUrl, persona, onE
 
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
-  controls.autoRotate = true;
+  // Initially disable autoRotate for the GSAP intro
+  controls.autoRotate = false;
   controls.autoRotateSpeed = 2.0;
   controls.enablePan = false;
 
@@ -220,11 +222,26 @@ export async function renderHologram({ image, modelUrl, overlayUrl, persona, onE
       const size = box.getSize(new THREE.Vector3());
       const maxDim = Math.max(size.x, size.y, size.z);
       model.position.sub(center);
+
+      // "Beat" Trellis 2: Real-time depth scaling (user-adjustable)
+      model.scale.set(1.0, 1.0, depthScale);
+
       const fov = camera.fov * (Math.PI / 180);
       const camZ = Math.abs((maxDim / 2) / Math.tan(fov / 2)) * 1.35;
-      camera.position.set(0, 0, camZ);
+      camera.position.set(0.8, 1.2, camZ); // 3/4 Perspective
       controls.target.set(0, 0, 0);
       controls.update();
+
+      // "Beat" Trellis 2: Cinematic Intro (Auto-Orbit)
+      gsap.from(camera.position, {
+        x: -5, z: 5, y: 3,
+        duration: 3,
+        ease: "power3.out",
+        onComplete: () => {
+            controls.autoRotate = true;
+        }
+      });
+
       model.traverse((child) => {
         if (child.isMesh && child.material) {
           if (child.material.uniforms && child.material.uniforms.uTexture) {
@@ -1405,6 +1422,12 @@ export async function renderHologram({ image, modelUrl, overlayUrl, persona, onE
     setWebcam: (enable) => {
       if (enable) startWebcam();
       else stopWebcam();
+    },
+    setDepthScale: (s) => {
+      if (model) model.scale.z = s;
+    },
+    setOrbitSpeed: (s) => {
+      controls.autoRotateSpeed = s;
     },
     setMood: (m, blushIntensity = 0, vertexWarp = "none") => {
         // Update mood state

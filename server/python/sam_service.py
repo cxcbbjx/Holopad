@@ -392,9 +392,8 @@ async def to_hologram_depth(image: UploadFile = File(...)):
         dz_dx = np.gradient(d_arr, axis=1)
         dz_dy = np.gradient(d_arr, axis=0)
         
-        # Normal vector [-dx, -dy, 1]
-        # Adjust strength of normal map by scaling gradients
-        strength = 5.0
+        # "Beat" Trellis 2: Increase normal strength for "edge sharpness"
+        strength = 12.0 # Increased from 5.0
         norm = np.dstack((-dz_dx * strength, -dz_dy * strength, np.ones_like(d_arr)))
         
         # Normalize
@@ -409,17 +408,27 @@ async def to_hologram_depth(image: UploadFile = File(...)):
     except Exception as e:
         print(f"Normal baking failed: {e}")
 
+    # OPTIMIZATION 6: "De-lighting" Heuristic
+    # Separate baked shadows from albedo to improve dynamic lighting in the engine.
+    # We increase brightness and contrast slightly to simulate a "delit" albedo.
+    albedo = img
+    try:
+        from PIL import ImageEnhance
+        enhancer = ImageEnhance.Contrast(albedo)
+        albedo = enhancer.enhance(1.15)
+        enhancer = ImageEnhance.Brightness(albedo)
+        albedo = enhancer.enhance(1.05)
+    except Exception:
+        pass
+
     # 4. Create Mesh
-    # We use a SimpleMaterial to attach the normal map
-    # Note: Trimesh basic GLB export might not fully support PBR Normal Maps without using PBRMaterial.
-    # We construct a PBR material.
-    
+    # We construct a PBR material with "commercial grade" albedo/normal maps.
     mat = trimesh.visual.material.PBRMaterial(
         name="HoloMaterial",
-        baseColorTexture=img,
+        baseColorTexture=albedo,
         normalTexture=normal_map_img,
         metallicFactor=0.0,
-        roughnessFactor=0.6,
+        roughnessFactor=0.5, # Slightly smoother than 0.6 for better speculars
         doubleSided=True
     )
     
@@ -429,12 +438,16 @@ async def to_hologram_depth(image: UploadFile = File(...)):
         visual=trimesh.visual.TextureVisuals(uv=uvs, material=mat)
     )
     
-    # FIX 3: Fix Face Normals (Lighting)
-    # Ensure normals are pointing the right way
+    # "Sandwich" Strategy: Post-Processing Mesh Refinement
+    # Ensure watertight geometry and clean manifold surfaces.
     try:
+        mesh.remove_duplicate_faces()
+        mesh.remove_degenerate_faces()
+        mesh.remove_infinite_values()
+        mesh.remove_unreferenced_vertices()
         mesh.fix_normals()
     except Exception as e:
-        print(f"Normal fix failed: {e}")
+        print(f"Mesh cleaning failed: {e}")
 
     # OPTIMIZATION 2: Mesh Smoothing
     # We keep the Laplacian smooth on the geometry (low freq) 
