@@ -343,80 +343,42 @@ async def to_hologram_depth(image: UploadFile = File(...)):
     vy = (0.5 - yy) * scale_h # Flip Y so top of image is +Y
     vz = depth_array * scale_depth # Z is depth
     
-    # --- MULTI-VIEW CONSISTENCY: Volumetric Hull Generation ---
-    # 1. Create Front Vertices
-    v_front = np.column_stack((vx.ravel(), vy.ravel(), vz.ravel()))
+    vertices = np.column_stack((vx.ravel(), vy.ravel(), vz.ravel()))
     
-    # 2. Create Back Vertices (Mirror Z and apply a slight "taper" for thickness)
-    # We assume the back is roughly 30% of the front's depth variation
-    vz_back = - (depth_array * (scale_depth * 0.3)) 
-    v_back = np.column_stack((vx.ravel(), vy.ravel(), vz_back.ravel()))
-    
-    # Combine all vertices
-    vertices = np.vstack((v_front, v_back))
-    
-    # 3. Create Faces for Front and Back
-    # Front faces (v0, v1, v2)
-    f_front1 = np.column_stack((v0.ravel(), v1.ravel(), v2.ravel()))
-    f_front2 = np.column_stack((v0.ravel(), v2.ravel(), v3.ravel()))
-    
-    # Back faces (need to flip winding order for inverted normals)
-    offset = len(v_front)
-    f_back1 = np.column_stack((v0.ravel() + offset, v2.ravel() + offset, v1.ravel() + offset))
-    f_back2 = np.column_stack((v0.ravel() + offset, v3.ravel() + offset, v2.ravel() + offset))
-    
-    # 4. Bridge the Edges (Watertight Geometry)
-    # We find boundary indices and create side-wall faces
-    edge_faces = []
-    # Top/Bottom edges
-    for c in range(cols - 1):
-        # Top edge
-        v_f_top = 0 * cols + c
-        v_b_top = v_f_top + offset
-        next_f = 0 * cols + (c + 1)
-        next_b = next_f + offset
-        edge_faces.append([v_f_top, next_f, next_b])
-        edge_faces.append([v_f_top, next_b, v_b_top])
-        
-        # Bottom edge
-        v_f_bot = (rows - 1) * cols + c
-        v_b_bot = v_f_bot + offset
-        next_f = (rows - 1) * cols + (c + 1)
-        next_b = next_f + offset
-        edge_faces.append([v_f_bot, next_b, next_f])
-        edge_faces.append([v_f_bot, v_b_bot, next_b])
-
-    # Left/Right edges
-    for r in range(rows - 1):
-        # Left edge
-        v_f_left = r * cols + 0
-        v_b_left = v_f_left + offset
-        next_f = (r + 1) * cols + 0
-        next_b = next_f + offset
-        edge_faces.append([v_f_left, next_f, next_b])
-        edge_faces.append([v_f_left, next_b, v_b_left])
-        
-        # Right edge
-        v_f_right = r * cols + (cols - 1)
-        v_b_right = v_f_right + offset
-        next_f = (r + 1) * cols + (cols - 1)
-        next_b = next_f + offset
-        edge_faces.append([v_f_right, next_b, next_f])
-        edge_faces.append([v_f_right, v_b_right, next_b])
-
-    # Combine all faces
-    faces = np.vstack((f_front1, f_front2, f_back1, f_back2, np.array(edge_faces)))
-    
-    # 5. UV Mapping (Project front texture to both sides for consistency)
+    # OPTIMIZATION 2: UV Mapping & Texture Bleeding
+    # Crop UVs by 1% (0.01) to avoid edge streaks
     u_crop = np.linspace(0.01, 0.99, cols)
     v_crop = np.linspace(0.01, 0.99, rows)
     xx_uv, yy_uv = np.meshgrid(u_crop, v_crop)
-    u_flat = xx_uv.ravel()
-    v_flat = 1.0 - yy_uv.ravel()
     
-    uvs_front = np.column_stack((u_flat, v_flat))
-    uvs_back = np.column_stack((u_flat, v_flat)) # Mirror UVs for the back
-    uvs = np.vstack((uvs_front, uvs_back))
+    u_flat = xx_uv.ravel()
+    v_flat = 1.0 - yy_uv.ravel() # Flip V to match image coords
+    uvs = np.column_stack((u_flat, v_flat))
+    
+    # Faces: Grid topology
+    # We can use trimesh.creation.triangulate_polygon? No, simple grid logic.
+    # Or faster: use scipy.spatial.Delaunay? No, grid is structured.
+    # Let's generate quad indices and split to triangles.
+    
+    # Indices for grid (rows, cols)
+    # Vertex index at (r, c) = r * cols + c
+    
+    # Vectorized face generation
+    # Quads: (r, c), (r+1, c), (r+1, c+1), (r, c+1)
+    r = np.arange(rows - 1)
+    c = np.arange(cols - 1)
+    rr, cc = np.meshgrid(r, c, indexing='ij')
+    
+    v0 = rr * cols + cc
+    v1 = (rr + 1) * cols + cc
+    v2 = (rr + 1) * cols + (cc + 1)
+    v3 = rr * cols + (cc + 1)
+    
+    # Triangle 1: v0, v1, v2
+    # Triangle 2: v0, v2, v3
+    f1 = np.column_stack((v0.ravel(), v1.ravel(), v2.ravel()))
+    f2 = np.column_stack((v0.ravel(), v2.ravel(), v3.ravel()))
+    faces = np.vstack((f1, f2))
     
     # OPTIMIZATION 5: Normal Map Baking
     # Generate Normal Map from high-res depth (512px) to recover lost detail
